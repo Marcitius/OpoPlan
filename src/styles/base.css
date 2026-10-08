@@ -13,6 +13,7 @@ body {
   min-width: 320px;
   font-size: 15px;
   line-height: 1.55;
+  touch-action: pan-x pan-y;
 }
 button,
 input,

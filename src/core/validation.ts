@@ -152,6 +152,7 @@ export const schemas: Record<TableName, z.ZodType> = {
     name: z.string().trim().min(1).max(300),
     kind,
     scheduled_day: date,
+    scheduled_time: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/).nullable().optional(),
     original_day: date,
     estimated_minutes: z.number().int().min(1).max(1440),
     status: z.enum(["pending", "completed", "cancelled"]),

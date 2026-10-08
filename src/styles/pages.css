@@ -1371,3 +1371,17 @@
     padding-top: 24px;
   }
 }
+
+/* Multi-activity day planner */
+.bulk-plan-entry { border: 1px solid var(--line); background: var(--surface); border-radius: 13px; padding: 16px; min-width: 0; }
+.bulk-plan-entry + .bulk-plan-entry { margin-top: 4px; }
+.bulk-plan-entry-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.bulk-plan-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.bulk-plan-actions .btn { flex: 1 1 auto; }
+.bulk-plan-summary { display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: var(--soft); color: var(--text); font-size: .875rem; border-radius: 10px; }
+.bulk-plan-summary svg { flex-shrink: 0; }
+@media (max-width: 620px) {
+  .bulk-plan-entry { padding: 14px; }
+  .bulk-plan-entry .form-grid { grid-template-columns: minmax(0, 1fr); }
+  .bulk-plan-actions .btn { font-size: .82rem; padding: 10px; }
+}

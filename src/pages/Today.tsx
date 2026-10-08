@@ -25,6 +25,8 @@ import {
   Menu,
 } from "../components/ui";
 import { PlanForm } from "../components/PlanForm";
+import { BulkPlanForm } from "../components/BulkPlanForm";
+import { comparePlanTasks, planMinutes } from "../core/planner";
 import { active } from "../core/types";
 import type { PlanTask } from "../core/types";
 import {
@@ -109,7 +111,7 @@ export function Today({
   });
   const tasks = active(data.plan_tasks).filter(
       (t) => t.opposition_id === oppositionId,
-    ),
+    ).sort(comparePlanTasks),
     pending = tasks.filter(
       (t) => t.status === "pending" && t.scheduled_day <= today,
     ),
@@ -117,6 +119,7 @@ export function Today({
       (t) => t.status === "completed" && t.scheduled_day === today,
     );
   const [editing, setEditing] = useState<PlanTask | "new" | null>(null),
+    [bulkOpen, setBulkOpen] = useState(false),
     [calendar, setCalendar] = useState(initialCalendar),
     [view, setView] = useState<"day" | "week" | "month">("week"),
     [selected, setSelected] = useState(today);
@@ -182,7 +185,7 @@ export function Today({
           )}
         </small>
       </div>
-      <span className="duration">{t.estimated_minutes} min</span>
+      <span className="duration">{t.scheduled_time ? `${t.scheduled_time.slice(0, 5)} · ` : ""}{t.estimated_minutes} min</span>
       {t.status === "pending" && (
         <Button variant="secondary" onClick={() => void beginTask(t)}>
           <Play size={15} />
@@ -323,9 +326,9 @@ export function Today({
             <CalendarDays size={18} />
             Agenda
           </Button>
-          <Button variant="ghost" onClick={() => setEditing("new")}>
+          <Button variant="secondary" onClick={() => { setSelected(addDays(today, 1)); setBulkOpen(true); }}>
             <Plus size={18} />
-            Actividad
+            Planificar mañana
           </Button>
         </div>
       </div>
@@ -546,10 +549,10 @@ export function Today({
             <section className="panel">
               <div className="section-title">
                 <h2>Tu plan</h2>
-                <button className="textbtn" onClick={() => setEditing("new")}>
-                  <Plus size={17} />
-                  Actividad
-                </button>
+                <div className="heading-actions">
+                  <button className="textbtn" onClick={() => setEditing("new")}><Plus size={17}/> Una actividad</button>
+                  <button className="textbtn" onClick={() => {setSelected(today);setBulkOpen(true);}}><CalendarDays size={17}/> Planificar día</button>
+                </div>
               </div>
               {pending.length ? (
                 pending.map(taskCard)
@@ -671,6 +674,7 @@ export function Today({
               </div>
               {view === "day" && (
                 <div>
+                  <p className="help">{tasks.filter(t => t.scheduled_day === selected && t.status !== "cancelled").length} actividades · {planMinutes(tasks.filter(t => t.scheduled_day === selected))} min previstos</p>
                   {tasks
                     .filter(
                       (t) =>
@@ -678,9 +682,10 @@ export function Today({
                         t.status !== "cancelled",
                     )
                     .map(taskCard)}
-                  <Button variant="ghost" onClick={() => setEditing("new")}>
-                    Añadir actividad en esta fecha
-                  </Button>
+                  <div className="heading-actions">
+                    <Button variant="ghost" onClick={() => setEditing("new")}>Añadir una actividad</Button>
+                    <Button variant="secondary" onClick={() => setBulkOpen(true)}>Planificar varias en esta fecha</Button>
+                  </div>
                 </div>
               )}
               <Button
@@ -695,6 +700,7 @@ export function Today({
                           id: t.id,
                           name: t.name,
                           day: t.scheduled_day,
+                          time: t.scheduled_time,
                           minutes: t.estimated_minutes,
                           notes: t.notes,
                         })),
@@ -818,6 +824,9 @@ export function Today({
           )}
         </aside>
       </div>
+      <Modal title="Planificar varias actividades" open={bulkOpen} wide onClose={() => setBulkOpen(false)}>
+        {bulkOpen && <BulkPlanForm key={selected} day={selected} onDone={() => setBulkOpen(false)} />}
+      </Modal>
       <Modal
         title={editing === "new" ? "Planificar actividad" : "Editar actividad"}
         open={!!editing}

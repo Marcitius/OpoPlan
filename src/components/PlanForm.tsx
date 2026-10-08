@@ -23,6 +23,7 @@ export function PlanForm({
       task?.scheduled_day ?? day ?? dayAt(new Date(), preferences.timezone),
     ),
     [minutes, setMinutes] = useState(task?.estimated_minutes ?? 20),
+    [time, setTime] = useState(task?.scheduled_time?.slice(0, 5) ?? ""),
     [notes, setNotes] = useState(task?.notes ?? ""),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
@@ -41,6 +42,7 @@ export function PlanForm({
             node_id: node || null,
             category_id: category || null,
             scheduled_day: date,
+            scheduled_time: time || null,
             original_day: task?.original_day ?? date,
             estimated_minutes: minutes,
             status: task?.status ?? "pending",
@@ -82,6 +84,13 @@ export function PlanForm({
             required
             value={date}
             onChange={(e) => setDate(e.target.value)}
+          />
+        </Field>
+        <Field label="Hora de inicio (opcional)">
+          <input
+            type="time"
+            value={time}
+            onChange={(e) => setTime(e.target.value)}
           />
         </Field>
         <Field label="Minutos previstos">

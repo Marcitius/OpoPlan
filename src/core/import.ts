@@ -364,29 +364,42 @@ export function calendarICS(
     day: string;
     minutes: number;
     notes: string;
+    time?: string | null;
   }[],
 ) {
-  const esc = (s: string) =>
-    s
-      .replace(/\\/g, "\\\\")
-      .replace(/\n/g, "\\n")
-      .replace(/,/g, "\\,")
-      .replace(/;/g, "\\;");
+  const esc = (s: string) => s.replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/,/g, "\\,").replace(/;/g, "\\;");
+  const allDayEnd = (day: string) => new Date(Date.parse(day + "T12:00:00Z") + 86400000).toISOString().slice(0, 10).replace(/-/g, "");
   return [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
     "PRODID:-//OpoPlan//Agenda//ES",
     "CALSCALE:GREGORIAN",
-    ...tasks.flatMap((t) => [
-      "BEGIN:VEVENT",
-      `UID:${t.id}@opoplan`,
-      `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, "").split(".")[0]}Z`,
-      `DTSTART;VALUE=DATE:${t.day.replace(/-/g, "")}`,
-      `DTEND;VALUE=DATE:${new Date(new Date(t.day + "T12:00:00Z").getTime() + 86400000).toISOString().slice(0, 10).replace(/-/g, "")}`,
-      `SUMMARY:${esc(t.name)}`,
-      `DESCRIPTION:${esc(t.notes + " · " + t.minutes + " min")}`,
-      "END:VEVENT",
-    ]),
+    ...tasks.flatMap((t) => {
+      const day = t.day.replace(/-/g, "");
+      const time = t.time?.slice(0, 5);
+      let start: string;
+      let end: string;
+      if (time && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time)) {
+        const [hh, mm] = time.split(":").map(Number);
+        start = `DTSTART:${day}T${time.replace(":", "")}00`;
+        // Floating local time; the importing calendar interprets it in its local timezone.
+        const endTime = new Date(Date.UTC(Number(t.day.slice(0, 4)), Number(t.day.slice(5, 7)) - 1, Number(t.day.slice(8, 10)), hh, mm + t.minutes));
+        end = `DTEND:${endTime.toISOString().replace(/[-:]/g, "").slice(0, 15)}`;
+      } else {
+        start = `DTSTART;VALUE=DATE:${day}`;
+        end = `DTEND;VALUE=DATE:${allDayEnd(t.day)}`;
+      }
+      return [
+        "BEGIN:VEVENT",
+        `UID:${t.id}@opoplan`,
+        `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, "").split(".")[0]}Z`,
+        start,
+        end,
+        `SUMMARY:${esc(t.name)}`,
+        `DESCRIPTION:${esc(t.notes + " · " + t.minutes + " min")}`,
+        "END:VEVENT",
+      ];
+    }),
     "END:VCALENDAR",
   ].join("\r\n");
 }

@@ -103,6 +103,7 @@ export interface PlanTask extends Base {
   name: string;
   kind: SessionKind;
   scheduled_day: string;
+  scheduled_time?: string | null;
   original_day: string;
   estimated_minutes: number;
   status: "pending" | "completed" | "cancelled";
