@@ -1,0 +1,10 @@
+project_id = "OpoPlan"
+[auth]
+site_url = "http://localhost:4173"
+additional_redirect_urls = ["http://localhost:4173"]
+enable_signup = true
+[auth.email]
+enable_signup = true
+enable_confirmations = true
+[functions.send-reminders]
+verify_jwt = false
