@@ -4,17 +4,15 @@ PWA de planificación y seguimiento de oposiciones por bloques independientes. R
 
 El código utiliza datos reales de la cuenta autenticada. No incorpora un modo de demostración ni un backend ficticio. El adaptador que aparece en `e2e/` sirve exclusivamente para ejecutar pruebas y no forma parte de la compilación de la aplicación.
 
-## Empezar
+## Actualizar la aplicación existente
 
-Sube primero el contenido del paquete de código a tu repositorio OpoPlan. La conexión de esta sesión rechazó la escritura en GitHub; el repositorio no se ha modificado.
+Este rediseño parte del código de `Marcitius/OpoPlan`, mantiene Supabase y conserva las funciones, el historial y el almacenamiento offline. La rama de trabajo es `redesign/professional-ui`. Producción: <https://opoplan-marc.pages.dev>.
 
-1. Configura el proyecto Supabase OpoPlan con las migraciones.
-2. Publica `Marcitius/OpoPlan` en Cloudflare Pages: comando `npm run build`, salida `dist`.
-3. Define `VITE_SUPABASE_URL` y `VITE_SUPABASE_PUBLISHABLE_KEY` como variables de compilación.
-4. Configura las URL de autenticación de Supabase con el dominio de Pages.
-5. Crea tu cuenta e importa tu temario. En Safari puedes añadir la aplicación a la pantalla de inicio.
+**La instalación existente no necesita SQL, migraciones ni cambios de variables. No vuelvas a ejecutar `INSTALL.sql`.** Publica la rama, revisa una preview de Cloudflare y aprueba el merge antes de sustituir producción. La conexión GitHub de esta sesión rechazó crear la rama remota; se entrega la rama local en un bundle, con código completo y parche.
 
-[Guía de despliegue paso a paso](docs/DESPLIEGUE.md) · [Manual de usuario](docs/USUARIO.md) · [Arquitectura y reglas de memoria](docs/ARQUITECTURA.md) · [Verificaciones y límites](docs/VERIFICACION.md)
+[Actualizar sin reinstalar](docs/ACTUALIZACION.md) · [Rediseño y sistema de diseño](docs/REDISENO.md) · [Pruebas del rediseño](docs/PRUEBAS-REDISENO.md) · [Manual de usuario](docs/USUARIO.md) · [Arquitectura](docs/ARQUITECTURA.md)
+
+Para una instalación en un proyecto nuevo y vacío, consulta [DESPLIEGUE.md](docs/DESPLIEGUE.md). Esa guía inicial no debe ejecutarse sobre la instalación actual.
 
 ## Funciones
 
@@ -57,6 +55,7 @@ src/core/          Tipos, fechas, memoria, estadísticas, importación y validac
 src/data/          Supabase, IndexedDB, cola de sincronización y contexto
 src/components/    Formularios, componentes accesibles y estado PWA
 src/pages/         Hoy, temario, repasos, estudio, progreso, pruebas y ajustes
+src/styles/        Sistema de diseño, componentes y composiciones responsive
 public/            Manifest, service worker, iconos y cabeceras de Cloudflare
 supabase/          Migraciones SQL, instalación y función de recordatorios
 scripts/           Compilación PWA, instalación SQL y verificación de producción
@@ -67,6 +66,6 @@ docs/             Despliegue, arquitectura, manual y resultados de QA
 
 ## Estado de entrega
 
-El despliegue en tus cuentas de Cloudflare y Supabase requiere acceso a dichas cuentas. No se han aplicado migraciones a tu proyecto ni publicado una URL de producción durante esta entrega. Los resultados reales de las pruebas, las comprobaciones todavía pendientes y las limitaciones están en [VERIFICACION.md](docs/VERIFICACION.md). La recepción de push en iPhone no se da por comprobada.
+El código del rediseño y sus pruebas están incluidos. No se han aplicado migraciones a tu proyecto, escrito datos de producción ni reemplazado el despliegue existente. Los resultados reales y las comprobaciones pendientes están en [PRUEBAS-REDISENO.md](docs/PRUEBAS-REDISENO.md). El acceso a GitHub para publicar la rama, la preview y la comprobación en un iPhone físico siguen pendientes; la recepción de push no se da por comprobada.
 
 No uses una clave `service_role` o `sb_secret_…` en el navegador. No hay funciones esenciales bloqueadas mediante suscripción.

@@ -38,23 +38,29 @@ CSV: columnas `id,parent_id,name,kind`; `kind` puede ser `container` o `block`. 
 
 ## Tu día
 
+En móvil, la barra inferior contiene **Hoy, Temario, Repasos, Progreso y Más**. Más reúne Estudiar, Pruebas, Agenda y Configuración. En escritorio estas funciones aparecen en la barra lateral. Un cronómetro abierto mantiene un acceso para volver a él.
+
 Hoy muestra minutos reales, objetivos, pendientes, vencidos y actividades previstas. **ESTUDIAR** abre el cronómetro; **REPASAR** permite elegir bloques y registrar valoraciones. Agenda permite ver días, semanas y meses. Actividad añade estudio, repaso o práctica prevista. Las actividades atrasadas siguen pendientes hasta realizarlas, posponerlas o cancelarlas.
 
 “Iniciar” abre un cronómetro. “Registrar realizada” pide el tiempo y los detalles reales; no completa una tarea sin una sesión. El menú de cada actividad permite cambiar fecha, editar y cancelar. La exportación `.ics` crea eventos de calendario: es una copia puntual, no sincronización bidireccional con Apple/Google Calendar.
 
 ## Estudiar o repasar
 
-Selecciona uno o varios bloques. Usa tiempo manual o cronómetro, con pausa/reanudación y Pomodoro. Al finalizar, revisa el reparto en segundos: debe sumar exactamente la duración total.
+Selecciona uno o varios bloques con el buscador. Usa tiempo manual o cronómetro, con pausa/reanudación y Pomodoro. Al finalizar, las opciones de reparto en segundos, fecha anterior, concentración y dificultad están en los apartados desplegables. El reparto debe sumar exactamente la duración total.
 
 En estudio, indica avance parcial o marca Estudio inicial completado **por bloque**. Solo completar un bloque inicia su programación de memoria. En repaso, elige Mal, Regular o Bien para cada bloque y añade una nota sobre lo olvidado. Puedes valorar sin cronómetro. No hace falta terminar el tema entero.
+
+Después de guardar un repaso, la confirmación muestra la siguiente fecha y permite corregir la valoración reciente o continuar con otro bloque pendiente. El mensaje distingue guardado local, cambios pendientes y sincronización; guardado local no confirma una escritura en la nube.
 
 El cronómetro se conserva al recargar. El Pomodoro detiene el cómputo al finalizar trabajo; pulsa para comenzar descanso o un nuevo intervalo. El descanso no suma. Finalizar abre el formulario de guardado; cancelar el formulario conserva el cronómetro pausado. Descartar sesión abierta no crea actividad.
 
 ## Temario y memoria
 
+Entra en una materia, después en un tema y finalmente en un bloque. La ruta superior permite volver sin acumular sangrías ni estrechar el texto. El buscador encuentra contenido en todos los niveles. Los filtros permiten consultar estado, archivados y papelera.
+
 El menú de tres puntos permite editar, mover, subir/bajar, archivar, restaurar o dividir. Papelera es recuperable y conserva historial. Dividir archiva el original y crea bloques nuevos sin atribuirles conocimientos previos. Usa búsqueda para localizar bloques dentro del árbol.
 
-Pulsar un nombre abre sesiones y eventos de memoria del bloque. Desde el menú de un evento puedes corregir la valoración o anular un error. Los originales se conservan. Progreso permite corregir tiempo/notas de sesiones o anularlas; la anulación elimina sus efectos en indicadores y deja trazabilidad.
+Pulsar el nombre de un bloque abre estado, fechas, tiempo, notas, sesiones y eventos de memoria. Desde el menú de un evento puedes corregir la valoración o anular un error. Los originales se conservan. En Progreso → Historial puedes corregir tiempo/notas de sesiones o anularlas; la anulación elimina sus efectos en indicadores y deja trazabilidad.
 
 Repasos muestra fechas y explica los intervalos. Puedes cambiar fecha, excluir o reiniciar programación. Vencido significa que sigue pendiente; nunca se considera realizado al cambiar el día.
 
@@ -71,6 +77,8 @@ Vincula errores a bloques al registrar o corregir una prueba. “Programar repas
 Progreso filtra fechas, actividad y materia. Tiempo general cuenta cada sesión una vez. Al elegir materia solo se suman sus segundos asignados. La duración de una fila de historial sigue siendo la sesión completa. Los rangos largos agrupan el gráfico por meses.
 
 Configura horas/minutos, descanso, fecha de examen, importancia de bloques, intervalos, Pomodoro, tema y zona horaria. Los objetivos son orientativos y no generan registros. Los nuevos valores de memoria se aplican a eventos futuros.
+
+Configuración está organizada en Cuenta y oposición, Objetivos, Repetición espaciada, Apariencia, Avisos, Datos y copias, Sincronización y Práctica. En móvil elige el apartado en el selector superior. Pulsar el indicador de sincronización abre directamente ese apartado.
 
 ## Dispositivos, offline y copias
 

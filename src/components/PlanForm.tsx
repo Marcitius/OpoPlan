@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useApp } from "../data/context";
-import { Button, Field, ErrorText } from "./ui";
+import { Button, Field, ErrorText, Disclosure } from "./ui";
 import { base, active } from "../core/types";
 import type { PlanTask, SessionKind } from "../core/types";
 import { dayAt } from "../core/dates";
@@ -129,13 +129,23 @@ export function PlanForm({
           </select>
         </Field>
       )}
-      <Field label="Notas">
-        <textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
-      </Field>
+      <Disclosure
+        title="Añadir una nota (opcional)"
+        open={Boolean(task?.notes)}
+      >
+        <Field label="Notas">
+          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
+        </Field>
+      </Disclosure>
       <ErrorText error={error} />
-      <Button disabled={busy}>
-        {busy ? "Guardando…" : task ? "Guardar cambios" : "Añadir actividad"}
-      </Button>
+      <div className="modal-footer">
+        <Button type="button" variant="ghost" disabled={busy} onClick={onDone}>
+          Cancelar
+        </Button>
+        <Button disabled={busy}>
+          {busy ? "Guardando…" : task ? "Guardar cambios" : "Añadir actividad"}
+        </Button>
+      </div>
     </form>
   );
 }

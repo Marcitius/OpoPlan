@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo, useEffect, useDeferredValue } from "react";
 import {
   Plus,
   Search,
@@ -10,6 +10,9 @@ import {
   Download,
   Archive,
   RotateCcw,
+  ChevronLeft,
+  Clock,
+  CheckCircle2,
 } from "lucide-react";
 import { useApp, change } from "../data/context";
 import type { SessionOptions } from "../components/SessionForm";
@@ -21,6 +24,8 @@ import {
   Menu,
   Empty,
   ProgressBar,
+  RatingButtons,
+  Disclosure,
 } from "../components/ui";
 import { base, active } from "../core/types";
 import type { Node, Rating, MemoryEvent } from "../core/types";
@@ -34,12 +39,15 @@ import {
 import { labelDay, dayAt, minutesLabel } from "../core/dates";
 import { parseTree, treeToNodes, download } from "../core/import";
 import type { TreeItem } from "../core/import";
+import { outlineIndex } from "../core/outline";
 import { mastery, effectiveEvents } from "../core/memory";
 export function Syllabus({ start }: { start: (o: SessionOptions) => void }) {
   const { owner, data, oppositionId, commit, save, memory, preferences } =
     useApp();
   const [q, setQ] = useState(""),
-    [expanded, setExpanded] = useState(new Set<string>()),
+    [browse, setBrowse] = useState<string | null>(null),
+    [statusFilter, setStatusFilter] = useState("all"),
+    [limit, setLimit] = useState(60),
     [showArchived, setShowArchived] = useState(false),
     [trash, setTrash] = useState(false),
     [editing, setEditing] = useState<Node | null>(null),
@@ -61,10 +69,11 @@ export function Syllabus({ start }: { start: (o: SessionOptions) => void }) {
     [correctionNote, setCorrectionNote] = useState("");
   const states = getStates(data),
     all = data.nodes.filter((n) => n.opposition_id === oppositionId),
+    byId = new Map(all.map((n) => [n.id, n])),
     available = all.filter((n) =>
       trash
         ? !!n.deleted_at
-        : !n.deleted_at && (showArchived || isActiveNode(n, all)),
+        : !n.deleted_at && (showArchived || isActiveNode(n, all, byId)),
     );
   function openEdit(n: Node | null, p: string | null = null) {
     setEditing(n);
@@ -105,148 +114,172 @@ export function Syllabus({ start }: { start: (o: SessionOptions) => void }) {
       ),
     );
   }
-  const renderNodes = (pid: string | null, level = 0): React.ReactNode =>
-    available
-      .filter(
-        (n) =>
-          n.parent_id === pid ||
-          (level === 0 && !available.some((x) => x.id === n.parent_id)),
-      )
-      .filter((n) => {
-        if (!q) return true;
-        return (
-          nodePath(n, all).toLowerCase().includes(q.toLowerCase()) ||
-          descendants(n.id, all).some((x) =>
-            x.name.toLowerCase().includes(q.toLowerCase()),
-          )
-        );
-      })
-      .sort((a, b) => a.position - b.position || a.id.localeCompare(b.id))
-      .map((n) => {
-        const children = available.some((x) => x.parent_id === n.id),
-          opened = q || expanded.has(n.id),
-          sub = [n, ...descendants(n.id, all)].filter(
-            (x) => x.kind === "block" && isActiveNode(x, all),
-          ),
-          done = sub.filter((x) => states.get(x.id)?.studied).length,
-          s = states.get(n.id)!;
-        const partial = active(data.session_blocks).some(
-          (a) => a.node_id === n.id && !a.completed,
-        );
-        return (
-          <div key={n.id}>
-            <div
-              className={`tree-row ${n.archived ? "archived" : ""}`}
-              style={{ "--depth": Math.min(level, 5) } as React.CSSProperties}
-            >
-              <button
-                className="tree-toggle"
-                aria-label={`${opened ? "Contraer" : "Expandir"} ${n.name}`}
-                disabled={!children}
-                onClick={() =>
-                  setExpanded((v) => {
-                    const copy = new Set(v);
-                    copy.has(n.id) ? copy.delete(n.id) : copy.add(n.id);
-                    return copy;
-                  })
-                }
-              >
-                {children ? (
-                  opened ? (
-                    <ChevronDown size={17} />
-                  ) : (
-                    <ChevronRight size={17} />
-                  )
-                ) : (
-                  <span />
-                )}
-              </button>
-              <span className={`node-icon ${n.kind}`}>
-                {n.kind === "container" ? (
-                  <Folder size={20} />
-                ) : (
-                  <BookOpen size={19} />
-                )}
-              </span>
-              <button className="tree-name" onClick={() => setDetail(n)}>
-                <strong>{n.name}</strong>
-                <small>
-                  {n.archived
-                    ? "Archivado"
-                    : n.kind === "container"
-                      ? `${done}/${sub.length} bloques estudiados`
-                      : s.studied
-                        ? mastery(s)
-                        : partial
-                          ? "En estudio"
-                          : "No empezado"}
-                </small>
-              </button>
-              <div className="tree-progress">
-                {n.kind === "container" ? (
-                  <ProgressBar
-                    value={sub.length ? (done / sub.length) * 100 : 0}
-                  />
-                ) : (
-                  <span className={`badge ${s.rating ?? ""}`}>
-                    {s.passes} pasada(s)
-                  </span>
-                )}
-              </div>
-              <Menu
-                items={
-                  trash
-                    ? [{ label: "Restaurar", action: () => void restore(n) }]
-                    : [
-                        { label: "Editar / mover", action: () => openEdit(n) },
-                        ...(n.kind === "container"
-                          ? [
-                              {
-                                label: "Añadir hijo",
-                                action: () => openEdit(null, n.id),
-                              },
-                            ]
-                          : [
-                              {
-                                label: "Registrar estudio",
-                                action: () =>
-                                  start({ kind: "study", nodeIds: [n.id] }),
-                              },
-                              {
-                                label: "Repasar",
-                                action: () =>
-                                  start({ kind: "review", nodeIds: [n.id] }),
-                              },
-                              {
-                                label: "Dividir en bloques nuevos",
-                                action: () => {
-                                  setSplit(n);
-                                  setSplitText("");
-                                  setError("");
-                                },
-                              },
-                            ]),
-                        { label: "Subir", action: () => void reorder(n, -1) },
-                        { label: "Bajar", action: () => void reorder(n, 1) },
-                        {
-                          label: n.archived ? "Desarchivar" : "Archivar",
-                          action: () =>
-                            void save("nodes", { ...n, archived: !n.archived }),
+  const deferredQ = useDeferredValue(q);
+  const index = useMemo(
+    () => outlineIndex(available, states),
+    [data, oppositionId, showArchived, trash],
+  );
+  const activeIndex = useMemo(
+    () =>
+      outlineIndex(
+        all.filter((n) => isActiveNode(n, all, byId)),
+        states,
+      ),
+    [data, oppositionId],
+  );
+  useEffect(() => {
+    setBrowse(null);
+    setLimit(60);
+    setQ("");
+  }, [oppositionId, showArchived, trash]);
+  const context = browse ? all.find((n) => n.id === browse) : undefined;
+  const path: Node[] = [];
+  let ancestor = context;
+  while (ancestor && path.length < 30) {
+    path.unshift(ancestor);
+    ancestor = all.find((n) => n.id === ancestor!.parent_id);
+  }
+  const rows = (
+    deferredQ || statusFilter !== "all"
+      ? available
+      : (index.children.get(browse) ?? [])
+  ).filter((n) => {
+    const m = states.get(n.id);
+    return (
+      (!deferredQ ||
+        nodePath(n, all)
+          .toLocaleLowerCase("es")
+          .includes(deferredQ.toLocaleLowerCase("es"))) &&
+      (statusFilter === "all" ||
+        (n.kind === "block" &&
+          (statusFilter === "studied"
+            ? m?.studied
+            : statusFilter === "difficult"
+              ? m?.rating === "mal" || m?.rating === "regular"
+              : !m?.studied)))
+    );
+  });
+  function enter(n: Node) {
+    if (n.kind === "container") {
+      setBrowse(n.id);
+      setQ("");
+      setStatusFilter("all");
+      setLimit(60);
+    } else setDetail(n);
+  }
+  function nodeMenu(n: Node) {
+    return (
+      <Menu
+        label={`Opciones de ${n.name}`}
+        items={
+          trash
+            ? [{ label: "Restaurar", action: () => void restore(n) }]
+            : [
+                { label: "Editar / mover", action: () => openEdit(n) },
+                ...(n.kind === "container"
+                  ? [
+                      {
+                        label: "Añadir hijo",
+                        action: () => openEdit(null, n.id),
+                      },
+                    ]
+                  : [
+                      {
+                        label: "Registrar estudio",
+                        action: () => start({ kind: "study", nodeIds: [n.id] }),
+                      },
+                      {
+                        label: "Repasar",
+                        action: () =>
+                          start({ kind: "review", nodeIds: [n.id] }),
+                      },
+                      {
+                        label: "Dividir en bloques nuevos",
+                        action: () => {
+                          setSplit(n);
+                          setSplitText("");
+                          setError("");
                         },
-                        {
-                          label: "Mover a papelera",
-                          action: () => void remove(n),
-                          danger: true,
-                        },
-                      ]
-                }
+                      },
+                    ]),
+                { label: "Subir", action: () => void reorder(n, -1) },
+                { label: "Bajar", action: () => void reorder(n, 1) },
+                {
+                  label: n.archived ? "Desarchivar" : "Archivar",
+                  action: () =>
+                    void save("nodes", { ...n, archived: !n.archived }),
+                },
+                {
+                  label: "Mover a papelera",
+                  action: () => void remove(n),
+                  danger: true,
+                },
+              ]
+        }
+      />
+    );
+  }
+  const renderRow = (n: Node) => {
+    const m = states.get(n.id)!,
+      count = activeIndex.counts.get(n.id) ?? { total: 0, studied: 0 };
+    const partial = active(data.session_blocks).some(
+      (a) =>
+        a.node_id === n.id &&
+        !a.completed &&
+        data.sessions.some(
+          (s) => s.id === a.session_id && s.kind === "study" && !s.deleted_at,
+        ),
+    );
+    const status = n.archived
+      ? "Archivado"
+      : n.kind === "container"
+        ? `${count.studied}/${count.total} bloques estudiados`
+        : m.studied
+          ? `Estudiado${m.rating ? ` · ${mastery(m)}` : ""}`
+          : partial
+            ? "En estudio"
+            : "No empezado";
+    return (
+      <div className={`outline-row ${n.archived ? "archived" : ""}`} key={n.id}>
+        <button
+          className="outline-main"
+          aria-label={n.kind === "container" ? `Expandir ${n.name}` : n.name}
+          onClick={() => enter(n)}
+        >
+          <span className={`node-icon ${n.kind}`}>
+            {n.kind === "container" ? (
+              <Folder size={21} />
+            ) : (
+              <BookOpen size={21} />
+            )}
+          </span>
+          <span className="outline-copy">
+            <strong>{n.name}</strong>
+            {(deferredQ || statusFilter !== "all") && (
+              <small>
+                {nodePath(n, all).split(" / ").slice(0, -1).join(" / ")}
+              </small>
+            )}
+            <small>
+              {status}
+              {n.kind === "block" && m.enabled && m.due
+                ? ` · ${m.due < dayAt(new Date(), preferences.timezone) ? "Repaso vencido" : "Repaso"}: ${labelDay(m.due)}`
+                : ""}
+            </small>
+            {n.kind === "container" && count.total > 0 && (
+              <ProgressBar
+                value={(count.studied / count.total) * 100}
+                label={`Progreso de ${n.name}`}
               />
-            </div>
-            {children && opened && <div>{renderNodes(n.id, level + 1)}</div>}
-          </div>
-        );
-      });
-  function renderPreview(items: TreeItem[]): React.ReactNode {
+            )}
+          </span>
+          {n.kind === "container" && <ChevronRight size={19} />}
+        </button>
+        {nodeMenu(n)}
+      </div>
+    );
+  };
+  function renderPreview(items: TreeItem[], depth = 0): React.ReactNode {
     return (
       <ul className="preview-tree">
         {items.map((n, i) => (
@@ -256,8 +289,13 @@ export function Syllabus({ start }: { start: (o: SessionOptions) => void }) {
             ) : (
               <BookOpen size={16} />
             )}
-            <span>{n.name}</span>
-            {n.children.length > 0 && renderPreview(n.children)}
+            <span>
+              {depth > 2 && (
+                <small className="preview-level">Nivel {depth + 1} · </small>
+              )}
+              {n.name}
+            </span>
+            {n.children.length > 0 && renderPreview(n.children, depth + 1)}
           </li>
         ))}
       </ul>
@@ -274,11 +312,8 @@ export function Syllabus({ start }: { start: (o: SessionOptions) => void }) {
       <div className="page-heading">
         <div>
           <div className="eyebrow">TU MAPA DE ESTUDIO</div>
-          <h1>El temario, a tu medida.</h1>
-          <p>
-            Organiza el contenido en bloques que puedas estudiar y repasar de
-            verdad.
-          </p>
+          <h1>Tu temario.</h1>
+          <p>Entra en cada materia y avanza bloque a bloque.</p>
         </div>
         <div className="heading-actions">
           <Button
@@ -292,7 +327,7 @@ export function Syllabus({ start }: { start: (o: SessionOptions) => void }) {
             <Upload size={18} />
             Importar
           </Button>
-          <Button onClick={() => openEdit(null)}>
+          <Button onClick={() => openEdit(null, browse)}>
             <Plus size={18} />
             Añadir
           </Button>
@@ -337,29 +372,125 @@ export function Syllabus({ start }: { start: (o: SessionOptions) => void }) {
           Exportar
         </Button>
       </div>
-      <section className="panel tree-panel">
-        <div className="section-title">
-          <h2>{data.oppositions.find((o) => o.id === oppositionId)?.name}</h2>
-          <span className="badge">
-            {blocks(data, oppositionId).length} bloques activos
+      <nav className="outline-breadcrumb" aria-label="Ruta del temario">
+        <button
+          onClick={() => {
+            setBrowse(null);
+            setQ("");
+            setStatusFilter("all");
+          }}
+        >
+          Todo el temario
+        </button>
+        {path.map((n) => (
+          <span key={n.id}>
+            <ChevronRight size={14} />
+            <button
+              aria-current={n.id === browse ? "location" : undefined}
+              onClick={() => {
+                setBrowse(n.id);
+                setQ("");
+                setStatusFilter("all");
+              }}
+            >
+              {n.name}
+            </button>
           </span>
+        ))}
+      </nav>
+      <section className="panel outline-panel">
+        <div className="section-title">
+          <div>
+            <h2>
+              {context?.name ??
+                data.oppositions.find((o) => o.id === oppositionId)?.name}
+            </h2>
+            <small className="muted">
+              {context
+                ? `${activeIndex.counts.get(context.id)?.total ?? 0} ${(activeIndex.counts.get(context.id)?.total ?? 0) === 1 ? "bloque" : "bloques"} en este contenido`
+                : `${blocks(data, oppositionId).length} bloques revisables`}
+            </small>
+          </div>
+          {browse && (
+            <Button
+              variant="ghost"
+              onClick={() => setBrowse(context?.parent_id ?? null)}
+            >
+              <ChevronLeft size={17} />
+              Volver
+            </Button>
+          )}
         </div>
-        {available.length ? (
-          renderNodes(null)
+        <div className="outline-filters">
+          <select
+            aria-label="Estado del temario"
+            value={statusFilter}
+            onChange={(e) => {
+              setStatusFilter(e.target.value);
+              setLimit(60);
+            }}
+          >
+            <option value="all">Todo el contenido</option>
+            <option value="new">Por estudiar</option>
+            <option value="studied">Estudiados</option>
+            <option value="difficult">Con dificultad</option>
+          </select>
+        </div>
+        {rows.length ? (
+          <>
+            {rows.slice(0, limit).map(renderRow)}
+            {rows.length > limit && (
+              <Button variant="ghost" onClick={() => setLimit((v) => v + 60)}>
+                Mostrar más ({rows.length - limit})
+              </Button>
+            )}
+          </>
         ) : (
           <Empty
-            title="Empieza por un bloque"
-            description="Crea una materia y sus bloques, o importa tu estructura de una sola vez."
+            title={
+              q || statusFilter !== "all"
+                ? "No hay resultados"
+                : context
+                  ? "Dale contenido a este tema"
+                  : "Un temario a tu medida"
+            }
+            description={
+              q || statusFilter !== "all"
+                ? "Cambia el buscador o el filtro para encontrar tus bloques."
+                : context
+                  ? "Añade bloques revisables para registrar estudio y recibir repasos. También puedes crear otros niveles dentro de este contenido."
+                  : "Crea tus materias y bloques, o importa tu estructura de una sola vez."
+            }
             action={
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  setImportOpen(true);
-                  setPreview(null);
-                }}
-              >
-                Importar temario
-              </Button>
+              q || statusFilter !== "all" ? (
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setQ("");
+                    setStatusFilter("all");
+                  }}
+                >
+                  Limpiar filtros
+                </Button>
+              ) : (
+                <>
+                  <Button onClick={() => openEdit(null, browse)}>
+                    <Plus size={17} />
+                    {context ? "Añadir un bloque" : "Crear materia"}
+                  </Button>
+                  {!context && (
+                    <Button
+                      variant="secondary"
+                      onClick={() => {
+                        setImportOpen(true);
+                        setPreview(null);
+                      }}
+                    >
+                      Importar temario
+                    </Button>
+                  )}
+                </>
+              )
             }
           />
         )}
@@ -383,6 +514,11 @@ export function Syllabus({ start }: { start: (o: SessionOptions) => void }) {
         wide
       >
         <div className="stack">
+          <div className="import-steps">
+            <span className="selected">1 · Contenido</span>
+            <span className={preview ? "selected" : ""}>2 · Vista previa</span>
+            <span>3 · Importar</span>
+          </div>
           <p className="help">
             JSON con name, kind y children. CSV con id,parent_id,name,kind.
             Texto con dos espacios de sangría por nivel.
@@ -560,13 +696,72 @@ export function Syllabus({ start }: { start: (o: SessionOptions) => void }) {
               <>
                 <div className="chips">
                   <span className="badge">
-                    {states.get(detail.id)?.passes ?? 0} pasada(s)
+                    {states.get(detail.id)?.passes ?? 0}{" "}
+                    {(states.get(detail.id)?.passes ?? 0) === 1
+                      ? "pasada"
+                      : "pasadas"}
                   </span>
                   <span className="badge">
                     {mastery(states.get(detail.id)!)}
                   </span>
                 </div>
-                <p>{states.get(detail.id)?.reason}</p>
+                <div className="block-detail-summary">
+                  {(() => {
+                    const history = active(data.session_blocks).filter(
+                      (a) =>
+                        a.node_id === detail.id &&
+                        active(data.sessions).some(
+                          (s) => s.id === a.session_id,
+                        ),
+                    );
+                    const events = effectiveEvents(
+                      data.memory_events.filter((e) => e.node_id === detail.id),
+                    );
+                    const initial = events.find((e) => e.kind === "study");
+                    const review = events
+                      .filter((e) => e.kind === "review")
+                      .at(-1);
+                    const m = states.get(detail.id)!;
+                    return (
+                      <>
+                        <div>
+                          <span>Primer estudio</span>
+                          <strong>
+                            {initial
+                              ? labelDay(initial.study_day)
+                              : "Sin completar"}
+                          </strong>
+                        </div>
+                        <div>
+                          <span>Último repaso</span>
+                          <strong>
+                            {review
+                              ? labelDay(review.study_day)
+                              : "Sin repasos"}
+                          </strong>
+                        </div>
+                        <div>
+                          <span>Próximo repaso</span>
+                          <strong>
+                            {m.due ? labelDay(m.due) : "Sin programar"}
+                          </strong>
+                        </div>
+                        <div>
+                          <span>Tiempo acumulado</span>
+                          <strong>
+                            {minutesLabel(
+                              history.reduce(
+                                (sum, a) => sum + a.allocated_seconds,
+                                0,
+                              ),
+                            )}
+                          </strong>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+                <p className="help">{states.get(detail.id)?.reason}</p>
                 <div className="heading-actions">
                   <Button
                     onClick={() => {
@@ -587,6 +782,12 @@ export function Syllabus({ start }: { start: (o: SessionOptions) => void }) {
                   </Button>
                 </div>
               </>
+            )}
+            {detail.notes && (
+              <div className="block-notes">
+                <h3>Tus notas</h3>
+                <p>{detail.notes}</p>
+              </div>
             )}
             <h3>Historial de sesiones</h3>
             {active(data.session_blocks)
@@ -615,7 +816,14 @@ export function Syllabus({ start }: { start: (o: SessionOptions) => void }) {
                   </div>
                 ) : null;
               })}
-            <h3>Eventos de memoria</h3>
+            {!active(data.session_blocks).some(
+              (a) => a.node_id === detail.id,
+            ) && (
+              <p className="help">
+                Tu primera sesión aparecerá aquí cuando la registres.
+              </p>
+            )}
+            <h3>Historial de memoria</h3>
             {effectiveEvents(
               data.memory_events.filter((e) => e.node_id === detail.id),
             )
@@ -649,6 +857,7 @@ export function Syllabus({ start }: { start: (o: SessionOptions) => void }) {
                             {
                               label: "Corregir valoración",
                               action: () => {
+                                setDetail(null);
                                 setCorrection(e);
                                 setRating(e.rating!);
                                 setCorrectionNote(e.notes);
@@ -703,16 +912,11 @@ export function Syllabus({ start }: { start: (o: SessionOptions) => void }) {
             }
           }}
         >
-          <Field label="Valoración correcta">
-            <select
-              value={rating}
-              onChange={(e) => setRating(e.target.value as Rating)}
-            >
-              <option value="mal">Mal</option>
-              <option value="regular">Regular</option>
-              <option value="bien">Bien</option>
-            </select>
-          </Field>
+          <RatingButtons
+            label="Valoración correcta"
+            value={rating}
+            onChange={setRating}
+          />
           <Field label="Comentario">
             <textarea
               value={correctionNote}
@@ -738,13 +942,15 @@ function NodeForm({
   const { owner, data, oppositionId, save } = useApp(),
     [name, setName] = useState(node?.name ?? ""),
     [kind, setKind] = useState<"block" | "container">(
-      node?.kind ?? "container",
+      node?.kind ?? (parent ? "block" : "container"),
     ),
     [parentId, setParent] = useState(node?.parent_id ?? parent ?? ""),
     [importance, setImportance] = useState(node?.importance ?? 3),
     [minutes, setMinutes] = useState(node?.estimated_minutes ?? 20),
     [notes, setNotes] = useState(node?.notes ?? ""),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [busy, setBusy] = useState(false),
+    [newBase] = useState(() => base(owner));
   const forbidden = new Set(
     node ? [node.id, ...descendants(node.id, data.nodes).map((n) => n.id)] : [],
   );
@@ -753,6 +959,7 @@ function NodeForm({
       className="stack"
       onSubmit={async (e) => {
         e.preventDefault();
+        setBusy(true);
         try {
           if (
             kind === "block" &&
@@ -773,7 +980,7 @@ function NodeForm({
               "Ya existe un elemento con ese nombre en este nivel.",
             );
           const row: Node = {
-            ...(node ?? base(owner)),
+            ...(node ?? newBase),
             opposition_id: oppositionId,
             parent_id: parentId || null,
             source_node_id: node?.source_node_id ?? null,
@@ -792,6 +999,8 @@ function NodeForm({
           onDone();
         } catch (err) {
           setError((err as Error).message);
+        } finally {
+          setBusy(false);
         }
       }}
     >
@@ -837,33 +1046,42 @@ function NodeForm({
             ))}
         </select>
       </Field>
-      {kind === "block" && (
-        <div className="form-grid">
-          <Field label="Importancia (1–5)">
-            <input
-              type="number"
-              min="1"
-              max="5"
-              value={importance}
-              onChange={(e) => setImportance(+e.target.value)}
-            />
-          </Field>
-          <Field label="Minutos estimados de repaso">
-            <input
-              type="number"
-              min="1"
-              max="1440"
-              value={minutes}
-              onChange={(e) => setMinutes(+e.target.value)}
-            />
-          </Field>
-        </div>
-      )}
-      <Field label="Notas">
-        <textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
-      </Field>
+      <Disclosure title="Opciones y notas" open={Boolean(node?.notes)}>
+        {kind === "block" && (
+          <div className="form-grid">
+            <Field label="Importancia (1–5)">
+              <input
+                type="number"
+                min="1"
+                max="5"
+                value={importance}
+                onChange={(e) => setImportance(+e.target.value)}
+              />
+            </Field>
+            <Field label="Minutos estimados de repaso">
+              <input
+                type="number"
+                min="1"
+                max="1440"
+                value={minutes}
+                onChange={(e) => setMinutes(+e.target.value)}
+              />
+            </Field>
+          </div>
+        )}
+        <Field label="Notas">
+          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
+        </Field>
+      </Disclosure>
       <ErrorText error={error} />
-      <Button>Guardar elemento</Button>
+      <div className="modal-footer">
+        <Button type="button" variant="ghost" disabled={busy} onClick={onDone}>
+          Cancelar
+        </Button>
+        <Button disabled={busy}>
+          {busy ? "Guardando…" : "Guardar elemento"}
+        </Button>
+      </div>
     </form>
   );
 }

@@ -26,14 +26,55 @@ async function onboard(page: any, name = "Mi oposición de prueba") {
     .getByRole("button", { name: "Crear mi plan", exact: true })
     .click();
   await expect(
-    page.getByRole("heading", { name: "Tu plan para hoy." }),
+    page.getByRole("heading", { name: /Buenas (tardes|noches)|Buenos días/ }),
   ).toBeVisible();
 }
 async function nav(page: any, name: string, mobile = false) {
-  await page
-    .locator(mobile ? ".bottom-nav" : ".sidebar nav")
-    .getByRole("button", { name, exact: true })
-    .click();
+  const isMobile = mobile || (page.viewportSize()?.width ?? 1280) < 1024;
+  if (isMobile && ["Estudiar", "Pruebas"].includes(name)) {
+    await page
+      .locator(".bottom-nav")
+      .getByRole("button", { name: "Más", exact: true })
+      .click();
+    await page
+      .locator(".more-list")
+      .getByRole("button", {
+        name: name === "Pruebas" ? "Pruebas y simulacros" : name,
+        exact: true,
+      })
+      .click();
+  } else
+    await page
+      .locator(isMobile ? ".bottom-nav" : ".sidebar nav")
+      .getByRole("button", { name, exact: true })
+      .click();
+}
+async function settings(page: any, section = "data") {
+  if ((page.viewportSize()?.width ?? 1280) < 1024) {
+    await page
+      .locator(".bottom-nav")
+      .getByRole("button", { name: "Más", exact: true })
+      .click();
+    await page
+      .locator(".more-list")
+      .getByRole("button", { name: "Configuración", exact: true })
+      .click();
+  } else
+    await page
+      .locator(".sidebar-bottom")
+      .getByRole("button", { name: "Configuración", exact: true })
+      .click();
+  if ((page.viewportSize()?.width ?? 1280) < 768)
+    await page
+      .getByLabel("Apartados de configuración", { exact: true })
+      .selectOption(section);
+  else
+    await page
+      .locator(".settings-nav")
+      .getByRole("button", {
+        name: section === "data" ? /Datos y copias/ : /Sincronización/,
+      })
+      .click();
 }
 async function importTree(page: any) {
   await nav(page, "Temario");
@@ -49,7 +90,7 @@ async function importTree(page: any) {
   ).toBeVisible();
   await page.getByRole("button", { name: "Confirmar importación" }).click();
   await expect(
-    page.getByText("3 bloques activos", { exact: true }),
+    page.getByText("3 bloques revisables", { exact: true }),
   ).toBeVisible();
 }
 async function manual(
@@ -74,6 +115,10 @@ async function manual(
       .check();
   await modal
     .getByRole("button", { name: "Guardar sesión", exact: true })
+    .click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Listo", exact: true })
     .click();
   await expect(modal).not.toBeVisible();
 }
@@ -129,12 +174,18 @@ test("real UI: import, partial study, multiblock time, reviews, tests, timer, of
     })
     .getByRole("button", { name: "Repasar", exact: true })
     .click();
-  await page.getByLabel("Recuerdo de Bloque A").selectOption("mal");
+  await page
+    .getByRole("button", { name: "Mal · Recuerdo de Bloque A", exact: true })
+    .click();
   await page
     .getByLabel("Partes olvidadas / comentario")
     .fill("Detalle que debo recordar");
   await page
     .getByRole("button", { name: "Guardar sesión", exact: true })
+    .click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Listo", exact: true })
     .click();
   await expect(page.getByRole("dialog")).not.toBeVisible();
   await waitCloud(page);
@@ -156,9 +207,16 @@ test("real UI: import, partial study, multiblock time, reviews, tests, timer, of
   await page.getByLabel("Aciertos", { exact: true }).fill("20");
   await page.getByLabel("Errores", { exact: true }).fill("5");
   await page.getByLabel("Blancos", { exact: true }).fill("5");
+  await page
+    .getByText("Fórmula de puntuación y nota manual", { exact: true })
+    .click();
   await page.getByLabel("Penalización por error").fill("0.25");
   await page
     .getByRole("button", { name: "Guardar sesión", exact: true })
+    .click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Listo", exact: true })
     .click();
   await expect(page.getByRole("dialog")).not.toBeVisible();
   await waitCloud(page);
@@ -198,6 +256,9 @@ test("real UI: import, partial study, multiblock time, reviews, tests, timer, of
     .getByRole("button", { name: "Iniciar sesión", exact: true })
     .click();
   await page.getByRole("button", { name: "Pausar", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Reanudar", exact: true }),
+  ).toBeVisible();
   await page.reload();
   await nav(page, "Estudiar");
   await expect(
@@ -206,6 +267,10 @@ test("real UI: import, partial study, multiblock time, reviews, tests, timer, of
   await page.getByRole("button", { name: "Finalizar", exact: true }).click();
   await page
     .getByRole("button", { name: "Guardar sesión", exact: true })
+    .click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Listo", exact: true })
     .click();
   await expect(page.getByRole("dialog")).not.toBeVisible();
   await waitCloud(page);
@@ -224,7 +289,7 @@ test("real UI: import, partial study, multiblock time, reviews, tests, timer, of
   await context.setOffline(true);
   await page.reload();
   await expect(
-    page.getByRole("heading", { name: "Tu plan para hoy." }),
+    page.getByRole("heading", { name: /Buenas (tardes|noches)|Buenos días/ }),
   ).toBeVisible();
   await manual(page, 12, false, ["Bloque B"]);
   await expect(page.locator(".sync-indicator")).toContainText("Sin conexión");
@@ -256,7 +321,7 @@ test("real UI: import, partial study, multiblock time, reviews, tests, timer, of
   await connect(p2);
   await login(p2);
   await expect(
-    p2.getByRole("heading", { name: "Tu plan para hoy." }),
+    p2.getByRole("heading", { name: /Buenas (tardes|noches)|Buenos días/ }),
   ).toBeVisible();
   await nav(p2, "Progreso", true);
   await expect(
@@ -273,10 +338,7 @@ test("real UI: import, partial study, multiblock time, reviews, tests, timer, of
     fullPage: true,
   });
   await second.close();
-  await page
-    .locator(".sidebar-bottom")
-    .getByRole("button", { name: "Configuración", exact: true })
-    .click();
+  await settings(page);
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Descargar copia completa" }).click();
   const downloaded = await downloadPromise;
@@ -305,7 +367,7 @@ test("real UI: import, partial study, multiblock time, reviews, tests, timer, of
   ).toBeVisible();
   await login(page);
   await expect(
-    page.getByRole("heading", { name: "Tu plan para hoy." }),
+    page.getByRole("heading", { name: /Buenas (tardes|noches)|Buenos días/ }),
   ).toBeVisible();
   await page.screenshot({
     path: "test-results/desktop-today.png",
@@ -462,9 +524,9 @@ test("edit and split real blocks, restore a complete backup to another account, 
   await nav(page, "Temario");
   await page.getByLabel("Buscar temario").fill("Bloque A");
   await page
-    .locator(".tree-row")
+    .locator(".outline-row")
     .filter({ has: page.getByText("Bloque A", { exact: true }) })
-    .getByRole("button", { name: "Opciones" })
+    .getByRole("button", { name: /Opciones de/ })
     .click();
   await page
     .getByRole("menuitem", { name: "Dividir en bloques nuevos" })
@@ -493,19 +555,16 @@ test("edit and split real blocks, restore a complete backup to another account, 
   ).toHaveLength(0);
   await page.getByLabel("Buscar temario").fill("Bloque B");
   await page
-    .locator(".tree-row")
+    .locator(".outline-row")
     .filter({ has: page.getByText("Bloque B", { exact: true }) })
-    .getByRole("button", { name: "Opciones" })
+    .getByRole("button", { name: /Opciones de/ })
     .click();
   await page.getByRole("menuitem", { name: "Editar / mover" }).click();
   await page.getByLabel("Nombre", { exact: true }).fill("Bloque B corregido");
   await page.getByRole("button", { name: "Guardar elemento" }).click();
   await expect(page.getByRole("dialog")).not.toBeVisible();
   await waitCloud(page);
-  await page
-    .locator(".sidebar-bottom")
-    .getByRole("button", { name: "Configuración", exact: true })
-    .click();
+  await settings(page);
   const promise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Descargar copia completa" }).click();
   const content = readFileSync((await (await promise).path())!, "utf8");
@@ -517,18 +576,17 @@ test("edit and split real blocks, restore a complete backup to another account, 
   await onboard(pb, "Mi oposición B");
   await nav(pb, "Temario");
   await expect(
-    pb.getByText("0 bloques activos", { exact: true }),
+    pb.getByText("0 bloques revisables", { exact: true }),
   ).toBeVisible();
-  await pb
-    .locator(".sidebar-bottom")
-    .getByRole("button", { name: "Configuración", exact: true })
-    .click();
+  await settings(pb);
   await pb.getByLabel("O pega el JSON").fill(content);
   await pb
     .getByRole("button", { name: "Validar y previsualizar copia" })
     .click();
   await pb.getByRole("button", { name: "Confirmar restauración" }).click();
-  await expect(pb.getByRole("button", { name: "Confirmar restauración" })).not.toBeVisible();
+  await expect(
+    pb.getByRole("button", { name: "Confirmar restauración" }),
+  ).not.toBeVisible();
   await waitCloud(pb);
   expect(
     (

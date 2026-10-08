@@ -1,4 +1,6 @@
-# Verificación y límites de la entrega
+# Verificación de la entrega inicial
+
+Este documento conserva los resultados de la implementación inicial. Para los resultados actuales de la actualización visual, consulta [PRUEBAS-REDISENO.md](PRUEBAS-REDISENO.md). La ejecución de `INSTALL.sql` descrita aquí fue únicamente en PostgreSQL/PGlite de prueba, nunca en el proyecto Supabase existente. El rediseño no modifica ni vuelve a instalar la base de datos.
 
 Fecha: 8 de octubre de 2026. Los resultados se refieren al código entregado, no a una instalación de producción.
 

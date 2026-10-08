@@ -15,6 +15,8 @@ import {
   Play,
   BookOpen,
   ChevronRight,
+  Ellipsis,
+  CalendarDays,
 } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
 import { connection, makeClient, validateConnection } from "./data/client";
@@ -44,7 +46,9 @@ export type Route =
   | "study"
   | "progress"
   | "tests"
-  | "settings";
+  | "settings"
+  | "more"
+  | "agenda";
 const nav = [
   { id: "today", name: "Hoy", icon: LayoutDashboard },
   { id: "syllabus", name: "Temario", icon: Library },
@@ -86,8 +90,8 @@ function Setup() {
         </p>
         <ol className="setup-steps">
           <li>
-            Ejecuta las migraciones del repositorio en el SQL Editor de
-            Supabase.
+            Conecta tu proyecto existente. Si ya está configurado, conserva sus
+            tablas y no vuelvas a ejecutar INSTALL.sql.
           </li>
           <li>
             Copia la <strong>publishable key pública</strong> desde Project
@@ -347,14 +351,19 @@ function Onboarding() {
     [busy, setBusy] = useState(false);
   return (
     <div className="onboarding panel">
+      <div className="onboarding-steps">
+        <span className="selected">1 · Tu plan</span>
+        <span>2 · Temario</span>
+        <span>3 · Primera sesión</span>
+      </div>
       <div className="eyebrow">BIENVENIDO A OPOPLAN</div>
       <h1>
         Prepara tu oposición,
         <br />a tu manera.
       </h1>
       <p className="muted">
-        Define tu objetivo. Después podrás importar el temario y registrar el
-        estudio que ya has realizado con sus fechas reales.
+        Solo necesitamos el nombre de tu oposición. El temario, el objetivo y la
+        fecha de examen se pueden completar después, a tu ritmo.
       </p>
       <form
         className="stack"
@@ -405,25 +414,30 @@ function Onboarding() {
             onChange={(e) => setName(e.target.value)}
           />
         </Field>
-        <div className="form-grid">
-          <Field label="Fecha de examen (opcional)">
-            <input
-              type="date"
-              value={exam}
-              onChange={(e) => setExam(e.target.value)}
-            />
-          </Field>
-          <Field label="Objetivo diario (minutos)">
-            <input
-              type="number"
-              min="0"
-              max="1440"
-              required
-              value={goal}
-              onChange={(e) => setGoal(+e.target.value)}
-            />
-          </Field>
-        </div>
+        <details className="disclosure">
+          <summary>Objetivo y fecha de examen (opcional)</summary>
+          <div className="stack">
+            <div className="form-grid">
+              <Field label="Fecha de examen (opcional)">
+                <input
+                  type="date"
+                  value={exam}
+                  onChange={(e) => setExam(e.target.value)}
+                />
+              </Field>
+              <Field label="Objetivo diario (minutos)">
+                <input
+                  type="number"
+                  min="0"
+                  max="1440"
+                  required
+                  value={goal}
+                  onChange={(e) => setGoal(+e.target.value)}
+                />
+              </Field>
+            </div>
+          </div>
+        </details>
         <ErrorText error={error} />
         <Button disabled={busy}>{busy ? "Guardando…" : "Crear mi plan"}</Button>
       </form>
@@ -439,11 +453,28 @@ function Workspace() {
     client,
     notify,
     timer,
+    setTimer,
     preferences,
     owner,
   } = useApp();
   const [route, setRoute] = useState<Route>("today"),
-    [session, setSession] = useState<SessionOptions | null>(null);
+    [session, setSession] = useState<SessionOptions | null>(null),
+    [settingsInitial, setSettingsInitial] = useState("opposition");
+  function navigate(next: Route, initialSettings = "opposition") {
+    if (next === "settings") setSettingsInitial(initialSettings);
+    setRoute(next);
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }
+  async function signOut() {
+    if (
+      sync.count &&
+      !confirm(
+        "Tienes cambios pendientes. Se conservarán en este dispositivo para esta cuenta. ¿Cerrar sesión?",
+      )
+    )
+      return;
+    await client.auth.signOut();
+  }
   const count = sync.count;
   const syncLabel = {
     loading: "Cargando datos",
@@ -555,6 +586,9 @@ function Workspace() {
 
   return (
     <div className="app-shell">
+      <a className="skip-link" href="#main-content">
+        Ir al contenido
+      </a>
       <aside className="sidebar">
         <Logo />
         <div className="sidebar-context">
@@ -577,8 +611,9 @@ function Workspace() {
           {nav.map((n) => (
             <button
               key={n.id}
+              aria-current={route === n.id ? "page" : undefined}
               className={route === n.id ? "selected" : ""}
-              onClick={() => setRoute(n.id)}
+              onClick={() => navigate(n.id)}
             >
               <n.icon size={21} />
               <span>{n.name}</span>
@@ -588,24 +623,13 @@ function Workspace() {
         </nav>
         <div className="sidebar-bottom">
           <button
-            onClick={() => setRoute("settings")}
+            onClick={() => navigate("settings")}
             className={route === "settings" ? "selected" : ""}
           >
             <Settings size={20} />
             Configuración
           </button>
-          <button
-            onClick={async () => {
-              if (
-                count &&
-                !confirm(
-                  "Tienes cambios pendientes de sincronizar. Se conservarán en este dispositivo para esta cuenta. ¿Cerrar sesión?",
-                )
-              )
-                return;
-              await client.auth.signOut();
-            }}
-          >
+          <button onClick={() => void signOut()}>
             <LogOut size={20} />
             Cerrar sesión
           </button>
@@ -623,13 +647,20 @@ function Workspace() {
           <div className="desktop-breadcrumb">
             Mi preparación <ChevronRight size={15} />
             <strong>
-              {nav.find((n) => n.id === route)?.name ?? "Configuración"}
+              {nav.find((n) => n.id === route)?.name ??
+                (
+                  {
+                    settings: "Configuración",
+                    more: "Más",
+                    agenda: "Agenda",
+                  } as Record<string, string>
+                )[route]}
             </strong>
           </div>
           <div className="topbar-actions">
             <button
               className={`sync-indicator ${sync.status}`}
-              onClick={() => setRoute("settings")}
+              onClick={() => navigate("settings", "sync")}
               title={sync.error ?? syncLabel}
             >
               {sync.status === "offline" ? (
@@ -644,13 +675,13 @@ function Workspace() {
             <button
               className="iconbtn mobile-settings"
               aria-label="Configuración"
-              onClick={() => setRoute("settings")}
+              onClick={() => navigate("settings")}
             >
               <Settings size={20} />
             </button>
           </div>
         </header>
-        <main>
+        <main id="main-content" tabIndex={-1} data-view={route}>
           <Suspense
             fallback={
               <p className="empty" role="status">
@@ -664,32 +695,69 @@ function Workspace() {
               </div>
             ) : !hasOpp ? (
               <Onboarding />
-            ) : route === "today" ? (
-              <Today start={start} navigate={setRoute} />
+            ) : route === "today" || route === "agenda" ? (
+              <Today
+                key={route}
+                start={start}
+                navigate={navigate}
+                initialCalendar={route === "agenda"}
+              />
             ) : route === "syllabus" ? (
               <Syllabus start={start} />
             ) : route === "reviews" ? (
-              <Reviews start={start} />
+              <Reviews start={start} navigate={navigate} />
+            ) : route === "more" ? (
+              <More navigate={navigate} signOut={signOut} />
             ) : route === "study" ? (
-              <Study start={start} />
+              <Study start={start} navigate={navigate} />
             ) : route === "progress" ? (
-              <Progress />
+              <Progress navigate={navigate} />
             ) : route === "tests" ? (
               <Tests start={start} />
             ) : (
-              <Configuration />
+              <Configuration
+                key={settingsInitial}
+                initialSection={settingsInitial}
+              />
             )}
           </Suspense>
         </main>
       </div>
+      {timer && route !== "study" && (
+        <button className="active-timer" onClick={() => navigate("study")}>
+          <TimerIcon size={21} />
+          <strong>Volver a tu sesión</strong>
+          <ChevronRight size={19} />
+        </button>
+      )}
       <nav className="bottom-nav" aria-label="Navegación móvil">
-        {nav.map((n) => (
+        {[
+          ...nav.filter((n) =>
+            ["today", "syllabus", "reviews", "progress"].includes(n.id),
+          ),
+          { id: "more" as const, name: "Más", icon: Ellipsis },
+        ].map((n) => (
           <button
             key={n.id}
-            className={route === n.id ? "selected" : ""}
-            onClick={() => setRoute(n.id)}
+            aria-current={
+              route === n.id ||
+              (n.id === "more" &&
+                ["tests", "settings", "study"].includes(route)) ||
+              (n.id === "today" && route === "agenda")
+                ? "page"
+                : undefined
+            }
+            className={
+              route === n.id ||
+              (n.id === "more" &&
+                ["tests", "settings", "study"].includes(route)) ||
+              (n.id === "today" && route === "agenda")
+                ? "selected"
+                : ""
+            }
+            onClick={() => navigate(n.id)}
           >
-            <n.icon size={21} />
+            <n.icon size={22} aria-hidden="true" />
             <span>{n.name}</span>
           </button>
         ))}
@@ -709,12 +777,134 @@ function Workspace() {
         wide
       >
         {session && (
-          <SessionForm options={session} onDone={() => setSession(null)} />
+          <SessionForm
+            key={`${session.kind}-${session.nodeIds?.join(",")}-${!!session.timer}`}
+            options={session}
+            onDone={() => setSession(null)}
+            onNext={setSession}
+            onTimer={async (kind, ids) => {
+              await setTimer({
+                id: crypto.randomUUID(),
+                owner_id: owner,
+                oppositionId,
+                kind,
+                nodeIds: ids,
+                taskId: session.taskId ?? null,
+                startedAt: new Date().toISOString(),
+                runningSince: Date.now(),
+                accumulated: 0,
+                mode: "continuous",
+                phase: "work",
+                phaseAccumulated: 0,
+                workSeconds: preferences.pomodoroWork * 60,
+                breakSeconds: preferences.pomodoroBreak * 60,
+              });
+              setSession(null);
+              navigate("study");
+            }}
+          />
         )}
       </Modal>
     </div>
   );
 }
+function More({
+  navigate,
+  signOut,
+}: {
+  navigate: (r: Route) => void;
+  signOut: () => Promise<void>;
+}) {
+  const { data, oppositionId, setOppositionId, sync, preferences } = useApp();
+  const items = [
+    {
+      route: "study",
+      title: "Estudiar",
+      description: "Cronómetro, Pomodoro y tiempo manual",
+      icon: TimerIcon,
+    },
+    {
+      route: "tests",
+      title: "Pruebas y simulacros",
+      description: "Registra resultados y encuentra tus puntos débiles",
+      icon: ClipboardCheck,
+    },
+    {
+      route: "agenda",
+      title: "Agenda",
+      description: "Organiza los próximos días y exporta al calendario",
+      icon: CalendarDays,
+    },
+    {
+      route: "settings",
+      title: "Configuración",
+      description: "Objetivos, apariencia, avisos y copias de seguridad",
+      icon: Settings,
+    },
+  ] as const;
+  return (
+    <>
+      <div className="page-heading">
+        <div>
+          <div className="eyebrow">TU ESPACIO</div>
+          <h1>Todo lo demás.</h1>
+          <p>Tu preparación, a tu manera.</p>
+        </div>
+      </div>
+      <div className="more-context">
+        <strong>Tu oposición</strong>
+        <Field label="Oposición actual">
+          <select
+            value={oppositionId}
+            onChange={(e) => setOppositionId(e.target.value)}
+          >
+            {active(data.oppositions)
+              .filter((o) => !o.archived)
+              .map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.name}
+                </option>
+              ))}
+          </select>
+        </Field>
+        <small className="muted">
+          {preferences.timezone} ·{" "}
+          {sync.status === "synced"
+            ? "Todos los cambios sincronizados"
+            : sync.status === "offline"
+              ? "Sin conexión. Los cambios se guardan en este dispositivo."
+              : `${sync.count} cambio(s) por sincronizar`}
+        </small>
+      </div>
+      <div className="more-list">
+        {items.map((i) => (
+          <button
+            key={i.route}
+            aria-label={i.title}
+            onClick={() => navigate(i.route)}
+          >
+            <span className="activity-icon">
+              <i.icon size={22} aria-hidden="true" />
+            </span>
+            <span>
+              <strong>{i.title}</strong>
+              <small>{i.description}</small>
+            </span>
+            <ChevronRight size={20} aria-hidden="true" />
+          </button>
+        ))}
+        <button onClick={() => void signOut()}>
+          <LogOut size={22} aria-hidden="true" />
+          <span>
+            <strong>Cerrar sesión</strong>
+            <small>Tu historial permanece vinculado a tu cuenta.</small>
+          </span>
+        </button>
+      </div>
+    </>
+  );
+}
+
 export default function App() {
   const c = useMemo(connection, []),
     client = useMemo(() => (c ? makeClient(c) : null), [c]);

@@ -1,5 +1,7 @@
 # Desplegar OpoPlan en Cloudflare Pages y Supabase
 
+> Esta es la guía de **instalación inicial en un proyecto vacío**. OpoPlan ya está instalado: para el rediseño sigue [ACTUALIZACION.md](ACTUALIZACION.md). No ejecutes `INSTALL.sql`, no repitas las migraciones y no reinicialices el proyecto existente.
+
 ## 0. Subir el código
 
 Descomprime `OpoPlan-codigo.zip`. Sube el contenido de la carpeta `OpoPlan` a la raíz de `Marcitius/OpoPlan` con GitHub Desktop/git o con Add file → Upload files. Debes ver `package.json`, `src/` y `supabase/` en la raíz. No subas el ZIP como único archivo.

@@ -2,25 +2,31 @@ import { active } from "./types";
 import type { DataSet, Node, SessionKind } from "./types";
 import { dayAt, addDays } from "./dates";
 import { replayMemory } from "./memory";
-export function isActiveNode(n: Node, nodes: Node[]): boolean {
+export function isActiveNode(
+  n: Node,
+  nodes: Node[],
+  index = new Map(nodes.map((n) => [n.id, n])),
+): boolean {
   if (n.archived || n.deleted_at) return false;
   const seen = new Set<string>([n.id]);
   let id = n.parent_id;
   while (id) {
-    const p = nodes.find((n) => n.id === id);
+    const p = index.get(id);
     if (!p || p.archived || p.deleted_at || seen.has(id)) return false;
     seen.add(id);
     id = p.parent_id;
   }
   return true;
 }
-export const blocks = (d: DataSet, oppositionId: string) =>
-  d.nodes.filter(
+export const blocks = (d: DataSet, oppositionId: string) => {
+  const index = new Map(d.nodes.map((n) => [n.id, n]));
+  return d.nodes.filter(
     (n) =>
       n.opposition_id === oppositionId &&
       n.kind === "block" &&
-      isActiveNode(n, d.nodes),
+      isActiveNode(n, d.nodes, index),
   );
+};
 export function descendants(id: string, nodes: Node[]): Node[] {
   const result: Node[] = [];
   const walk = (p: string) => {
@@ -46,11 +52,14 @@ export function nodePath(n: Node, nodes: Node[]): string {
   return names.join(" / ");
 }
 export function getStates(d: DataSet) {
+  const byNode = new Map<string, typeof d.memory_events>();
+  for (const event of d.memory_events) {
+    const rows = byNode.get(event.node_id) ?? [];
+    rows.push(event);
+    byNode.set(event.node_id, rows);
+  }
   return new Map(
-    d.nodes.map((n) => [
-      n.id,
-      replayMemory(d.memory_events.filter((e) => e.node_id === n.id)),
-    ]),
+    d.nodes.map((n) => [n.id, replayMemory(byNode.get(n.id) ?? [])]),
   );
 }
 export function coverage(d: DataSet, oppositionId: string) {

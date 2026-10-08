@@ -32,7 +32,11 @@ const timezoneOptions = [
   "America/New_York",
   "UTC",
 ];
-export function Configuration() {
+export function Configuration({
+  initialSection = "opposition",
+}: {
+  initialSection?: string;
+}) {
   const {
     data,
     owner,
@@ -135,653 +139,808 @@ export function Configuration() {
       setPushMessage((err as Error).message);
     }
   }
+  const [section, setSection] = useState(initialSection);
+  const sections = [
+    {
+      id: "opposition",
+      name: "Cuenta y oposición",
+      detail: "Nombre y fecha de examen",
+    },
+    { id: "goals", name: "Objetivos", detail: "Tiempo y días de estudio" },
+    {
+      id: "memory",
+      name: "Repetición espaciada",
+      detail: "Reglas de tus próximos repasos",
+    },
+    {
+      id: "appearance",
+      name: "Apariencia",
+      detail: "Tema, idioma y zona horaria",
+    },
+    {
+      id: "notifications",
+      name: "Notificaciones",
+      detail: "Avisos e instalación",
+    },
+    {
+      id: "data",
+      name: "Datos y copias",
+      detail: "Exportar e importar tu historial",
+    },
+    {
+      id: "sync",
+      name: "Sincronización",
+      detail: "Dispositivos y cambios pendientes",
+    },
+    { id: "categories", name: "Categorías", detail: "Organiza tus prácticas" },
+  ];
+  async function persistPrefs() {
+    try {
+      new Intl.DateTimeFormat("es", { timeZone: prefs.timezone });
+      if (
+        prefs.rules.firstDays > prefs.rules.maxDays ||
+        prefs.rules.secondDays > prefs.rules.maxDays
+      )
+        throw new Error(
+          "El intervalo máximo debe ser igual o mayor que los primeros intervalos.",
+        );
+      await save("profiles", { ...profileBase!, preferences: prefs });
+      setProfileBase(
+        (await readData(owner)).profiles.find((p) => p.id === owner),
+      );
+      setError("");
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
   return (
     <>
       <div className="page-heading">
         <div>
           <div className="eyebrow">TU PREPARACIÓN, TUS REGLAS</div>
-          <h1>Ajusta tu plan.</h1>
+          <h1>A tu manera.</h1>
           <p>Objetivos, memoria, dispositivos y copias de seguridad.</p>
         </div>
       </div>
-      <div className="settings-grid">
-        <section className="panel stack">
-          <div className="section-title">
-            <h2>Sincronización</h2>
-            <Cloud size={20} />
-          </div>
-          <div className={`sync-banner ${sync.status}`}>
-            <strong>
-              {
-                {
-                  loading: "Cargando",
-                  synced: "Sincronizado",
-                  pending: "Cambios pendientes",
-                  offline: "Sin conexión",
-                  error: "Error de sincronización",
-                  conflict: "Conflicto que requiere atención",
-                }[sync.status]
-              }
-            </strong>
-            <span>{sync.count} operación(es) pendiente(s)</span>
-          </div>
-          {sync.error && <p className="error">{sync.error}</p>}
-          <p className="help">
-            Los cambios se conservan en este dispositivo hasta que Supabase
-            confirma el guardado. Accede con la misma cuenta en los demás
-            dispositivos.
-          </p>
-          <Button variant="secondary" onClick={retry}>
-            <RefreshCw size={17} />
-            Sincronizar ahora
-          </Button>
-          {sync.operations.map((op) => (
-            <div className="operation" key={op.id}>
-              <small>{op.id}</small>
-              <span>
-                {op.changes.length} registro(s) · {op.attempts} reintento(s)
-              </span>
-              {op.error && <p>{op.error}</p>}
-              {op.conflicts && (
-                <Button variant="secondary" onClick={() => setConflict(op)}>
-                  Revisar conflicto
-                </Button>
-              )}
-            </div>
+      <div className="settings-layout">
+        <select
+          className="settings-select"
+          aria-label="Apartados de configuración"
+          value={section}
+          onChange={(e) => {
+            setSection(e.target.value);
+            setError("");
+          }}
+        >
+          {sections.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.name}
+            </option>
           ))}
-          <div className="help security-note">
-            <ShieldCheck size={17} />
-            Tu historial se guarda por cuenta. Las ediciones utilizan control de
-            versiones.
-          </div>
-        </section>
-        <section className="panel stack">
-          <h2>Mi oposición</h2>
-          <form
-            className="stack"
-            onSubmit={async (e) => {
-              e.preventDefault();
-              try {
-                await commit([
-                  change("oppositions", {
-                    ...oppBase!,
-                    name: name.trim(),
-                    exam_date: exam || null,
-                  }),
-                  change("profiles", {
-                    ...profileBase!,
-                    display_name: displayName,
-                  }),
-                ]);
-                const local = await readData(owner);
-                setProfileBase(local.profiles.find((p) => p.id === owner));
-                setOppBase(
-                  local.oppositions.find((o) => o.id === oppositionId),
-                );
+        </select>
+        <nav className="settings-nav" aria-label="Menú de configuración">
+          {sections.map((item) => (
+            <button
+              key={item.id}
+              aria-current={section === item.id ? "page" : undefined}
+              className={section === item.id ? "selected" : ""}
+              onClick={() => {
+                setSection(item.id);
                 setError("");
-              } catch (err) {
-                setError((err as Error).message);
-              }
-            }}
+              }}
+            >
+              <strong>{item.name}</strong>
+              <small>{item.detail}</small>
+            </button>
+          ))}
+        </nav>
+        <div className="settings-grid">
+          <section
+            className="panel stack settings-section"
+            hidden={section !== "sync"}
           >
-            <Field label="Tu nombre (opcional)">
-              <input
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-              />
-            </Field>
-            <Field label="Oposición">
-              <input
-                required
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-            </Field>
-            <Field label="Fecha prevista de examen">
-              <input
-                type="date"
-                value={exam}
-                onChange={(e) => setExam(e.target.value)}
-              />
-            </Field>
-            <Button>Guardar oposición</Button>
-          </form>
-          <form
-            className="inline-form"
-            onSubmit={async (e) => {
-              e.preventDefault();
-              try {
-                await save("oppositions", {
-                  ...base(owner),
-                  name: newOpp.trim(),
-                  exam_date: null,
-                  archived: false,
-                });
-                setNewOpp("");
-              } catch (err) {
-                setError((err as Error).message);
-              }
-            }}
-          >
-            <input
-              aria-label="Nombre de otra oposición"
-              required
-              placeholder="Otra oposición"
-              value={newOpp}
-              onChange={(e) => setNewOpp(e.target.value)}
-            />
-            <Button variant="secondary">
-              <Plus size={17} />
-              Crear
-            </Button>
-          </form>
-        </section>
-        <section className="panel stack">
-          <h2>Objetivos y preferencias</h2>
-          <form
-            className="stack"
-            onSubmit={async (e) => {
-              e.preventDefault();
-              try {
-                new Intl.DateTimeFormat("es", { timeZone: prefs.timezone });
-                if (
-                  prefs.rules.firstDays > prefs.rules.maxDays ||
-                  prefs.rules.secondDays > prefs.rules.maxDays
-                )
-                  throw new Error(
-                    "El intervalo máximo debe ser igual o mayor que los primeros intervalos.",
-                  );
-                await save("profiles", { ...profileBase!, preferences: prefs });
-                setProfileBase(
-                  (await readData(owner)).profiles.find((p) => p.id === owner),
-                );
-                setError("");
-              } catch (err) {
-                setError((err as Error).message);
-              }
-            }}
-          >
-            <div className="form-grid">
-              <Field label="Minutos objetivo al día">
-                <input
-                  type="number"
-                  min="0"
-                  max="1440"
-                  value={prefs.dailyMinutes}
-                  onChange={(e) =>
-                    setPrefs({ ...prefs, dailyMinutes: +e.target.value })
-                  }
-                />
-              </Field>
-              <Field label="Minutos objetivo a la semana">
-                <input
-                  type="number"
-                  min="0"
-                  max="10080"
-                  value={prefs.weeklyMinutes}
-                  onChange={(e) =>
-                    setPrefs({ ...prefs, weeklyMinutes: +e.target.value })
-                  }
-                />
-              </Field>
-              <Field label="Máximo orientativo de repaso al día">
-                <input
-                  type="number"
-                  min="0"
-                  max="1440"
-                  value={prefs.reviewMinutes}
-                  onChange={(e) =>
-                    setPrefs({ ...prefs, reviewMinutes: +e.target.value })
-                  }
-                />
-              </Field>
-              <Field label="Zona horaria">
-                <select
-                  value={prefs.timezone}
-                  onChange={(e) =>
-                    setPrefs({ ...prefs, timezone: e.target.value })
-                  }
-                >
-                  {[...new Set([...timezoneOptions, prefs.timezone])].map(
-                    (t) => (
-                      <option key={t}>{t}</option>
-                    ),
-                  )}
-                </select>
-              </Field>
-              <Field label="Tema visual">
-                <select
-                  value={prefs.theme}
-                  onChange={(e) =>
-                    setPrefs({
-                      ...prefs,
-                      theme: e.target.value as Preferences["theme"],
-                    })
-                  }
-                >
-                  <option value="auto">Automático</option>
-                  <option value="light">Claro</option>
-                  <option value="dark">Oscuro</option>
-                </select>
-              </Field>
-              <Field label="Idioma">
-                <select>
-                  <option>Español</option>
-                </select>
-              </Field>
-              <Field label="Pomodoro · trabajo (min)">
-                <input
-                  type="number"
-                  min="1"
-                  max="180"
-                  value={prefs.pomodoroWork}
-                  onChange={(e) =>
-                    setPrefs({ ...prefs, pomodoroWork: +e.target.value })
-                  }
-                />
-              </Field>
-              <Field label="Pomodoro · descanso (min)">
-                <input
-                  type="number"
-                  min="1"
-                  max="60"
-                  value={prefs.pomodoroBreak}
-                  onChange={(e) =>
-                    setPrefs({ ...prefs, pomodoroBreak: +e.target.value })
-                  }
-                />
-              </Field>
+            <div className="section-title">
+              <h2>Sincronización</h2>
+              <Cloud size={20} />
             </div>
-            <div>
-              <strong>Días de estudio</strong>
-              <div className="day-picker">
-                {["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"].map(
-                  (d, i) => (
-                    <button
-                      type="button"
-                      className={prefs.studyDays.includes(i) ? "selected" : ""}
-                      key={d}
-                      onClick={() =>
+            <div className={`sync-box ${sync.status}`}>
+              <strong>
+                {
+                  {
+                    loading: "Cargando",
+                    synced: "Sincronizado",
+                    pending: "Cambios pendientes",
+                    offline: "Sin conexión",
+                    error: "Error de sincronización",
+                    conflict: "Conflicto que requiere atención",
+                  }[sync.status]
+                }
+              </strong>
+              <span>
+                {sync.count}{" "}
+                {sync.count === 1
+                  ? "operación pendiente"
+                  : "operaciones pendientes"}
+              </span>
+            </div>
+            {sync.error && <p className="error">{sync.error}</p>}
+            <p className="help">
+              Los cambios se conservan en este dispositivo hasta que Supabase
+              confirma el guardado. Accede con la misma cuenta en los demás
+              dispositivos.
+            </p>
+            <Button variant="secondary" onClick={retry}>
+              <RefreshCw size={17} />
+              Sincronizar ahora
+            </Button>
+            {sync.operations.map((op) => (
+              <div className="sync-op" key={op.id}>
+                <small>{op.id}</small>
+                <span>
+                  {op.changes.length} registro(s) · {op.attempts} reintento(s)
+                </span>
+                {op.error && <p>{op.error}</p>}
+                {op.conflicts && (
+                  <Button variant="secondary" onClick={() => setConflict(op)}>
+                    Revisar conflicto
+                  </Button>
+                )}
+              </div>
+            ))}
+            <div className="help security-note">
+              <ShieldCheck size={17} />
+              Tu historial se guarda por cuenta. Las ediciones utilizan control
+              de versiones.
+            </div>
+          </section>
+          <section
+            className="panel stack settings-section"
+            hidden={section !== "opposition"}
+          >
+            <h2>Mi oposición</h2>
+            <form
+              className="stack"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                try {
+                  await commit([
+                    change("oppositions", {
+                      ...oppBase!,
+                      name: name.trim(),
+                      exam_date: exam || null,
+                    }),
+                    change("profiles", {
+                      ...profileBase!,
+                      display_name: displayName,
+                    }),
+                  ]);
+                  const local = await readData(owner);
+                  setProfileBase(local.profiles.find((p) => p.id === owner));
+                  setOppBase(
+                    local.oppositions.find((o) => o.id === oppositionId),
+                  );
+                  setError("");
+                } catch (err) {
+                  setError((err as Error).message);
+                }
+              }}
+            >
+              <Field label="Tu nombre (opcional)">
+                <input
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                />
+              </Field>
+              <Field label="Oposición">
+                <input
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                />
+              </Field>
+              <Field label="Fecha prevista de examen">
+                <input
+                  type="date"
+                  value={exam}
+                  onChange={(e) => setExam(e.target.value)}
+                />
+              </Field>
+              <Button>Guardar oposición</Button>
+            </form>
+            <form
+              className="inline-form"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                try {
+                  await save("oppositions", {
+                    ...base(owner),
+                    name: newOpp.trim(),
+                    exam_date: null,
+                    archived: false,
+                  });
+                  setNewOpp("");
+                } catch (err) {
+                  setError((err as Error).message);
+                }
+              }}
+            >
+              <input
+                aria-label="Nombre de otra oposición"
+                required
+                placeholder="Otra oposición"
+                value={newOpp}
+                onChange={(e) => setNewOpp(e.target.value)}
+              />
+              <Button variant="secondary">
+                <Plus size={17} />
+                Crear
+              </Button>
+            </form>
+          </section>
+          <section
+            className="panel stack settings-section"
+            hidden={!["goals", "memory", "appearance"].includes(section)}
+          >
+            <h2>
+              {section === "goals"
+                ? "Objetivos de estudio"
+                : section === "memory"
+                  ? "Repetición espaciada"
+                  : "Apariencia y región"}
+            </h2>
+            <form
+              className="stack"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                try {
+                  new Intl.DateTimeFormat("es", { timeZone: prefs.timezone });
+                  if (
+                    prefs.rules.firstDays > prefs.rules.maxDays ||
+                    prefs.rules.secondDays > prefs.rules.maxDays
+                  )
+                    throw new Error(
+                      "El intervalo máximo debe ser igual o mayor que los primeros intervalos.",
+                    );
+                  await save("profiles", {
+                    ...profileBase!,
+                    preferences: prefs,
+                  });
+                  setProfileBase(
+                    (await readData(owner)).profiles.find(
+                      (p) => p.id === owner,
+                    ),
+                  );
+                  setError("");
+                } catch (err) {
+                  setError((err as Error).message);
+                }
+              }}
+            >
+              <div className="form-grid">
+                <div className="stack" hidden={section !== "goals"}>
+                  {" "}
+                  <Field label="Minutos objetivo al día">
+                    <input
+                      type="number"
+                      min="0"
+                      max="1440"
+                      value={prefs.dailyMinutes}
+                      onChange={(e) =>
+                        setPrefs({ ...prefs, dailyMinutes: +e.target.value })
+                      }
+                    />
+                  </Field>
+                  <Field label="Minutos objetivo a la semana">
+                    <input
+                      type="number"
+                      min="0"
+                      max="10080"
+                      value={prefs.weeklyMinutes}
+                      onChange={(e) =>
+                        setPrefs({ ...prefs, weeklyMinutes: +e.target.value })
+                      }
+                    />
+                  </Field>
+                  <Field label="Máximo orientativo de repaso al día">
+                    <input
+                      type="number"
+                      min="0"
+                      max="1440"
+                      value={prefs.reviewMinutes}
+                      onChange={(e) =>
+                        setPrefs({ ...prefs, reviewMinutes: +e.target.value })
+                      }
+                    />
+                  </Field>
+                </div>
+                <div className="stack" hidden={section !== "appearance"}>
+                  {" "}
+                  <Field label="Zona horaria">
+                    <select
+                      value={prefs.timezone}
+                      onChange={(e) =>
+                        setPrefs({ ...prefs, timezone: e.target.value })
+                      }
+                    >
+                      {[...new Set([...timezoneOptions, prefs.timezone])].map(
+                        (t) => (
+                          <option key={t}>{t}</option>
+                        ),
+                      )}
+                    </select>
+                  </Field>
+                  <Field label="Tema visual">
+                    <select
+                      value={prefs.theme}
+                      onChange={(e) =>
                         setPrefs({
                           ...prefs,
-                          studyDays: prefs.studyDays.includes(i)
-                            ? prefs.studyDays.filter((x) => x !== i)
-                            : [...prefs.studyDays, i],
+                          theme: e.target.value as Preferences["theme"],
                         })
                       }
                     >
-                      {d}
-                    </button>
-                  ),
-                )}
+                      <option value="auto">Automático</option>
+                      <option value="light">Claro</option>
+                      <option value="dark">Oscuro</option>
+                    </select>
+                  </Field>
+                  <Field label="Idioma">
+                    <select>
+                      <option>Español</option>
+                    </select>
+                  </Field>
+                </div>
+                <div className="stack" hidden={section !== "goals"}>
+                  {" "}
+                  <Field label="Pomodoro · trabajo (min)">
+                    <input
+                      type="number"
+                      min="1"
+                      max="180"
+                      value={prefs.pomodoroWork}
+                      onChange={(e) =>
+                        setPrefs({ ...prefs, pomodoroWork: +e.target.value })
+                      }
+                    />
+                  </Field>
+                  <Field label="Pomodoro · descanso (min)">
+                    <input
+                      type="number"
+                      min="1"
+                      max="60"
+                      value={prefs.pomodoroBreak}
+                      onChange={(e) =>
+                        setPrefs({ ...prefs, pomodoroBreak: +e.target.value })
+                      }
+                    />
+                  </Field>
+                  <div>
+                    <strong>Días de estudio</strong>
+                    <div className="day-picker">
+                      {["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"].map(
+                        (d, i) => (
+                          <button
+                            type="button"
+                            aria-pressed={prefs.studyDays.includes(i)}
+                            className={
+                              prefs.studyDays.includes(i) ? "selected" : ""
+                            }
+                            key={d}
+                            onClick={() =>
+                              setPrefs({
+                                ...prefs,
+                                studyDays: prefs.studyDays.includes(i)
+                                  ? prefs.studyDays.filter((x) => x !== i)
+                                  : [...prefs.studyDays, i],
+                              })
+                            }
+                          >
+                            {d}
+                          </button>
+                        ),
+                      )}
+                    </div>
+                    <p className="help">
+                      Los días no seleccionados son días de descanso. Los
+                      repasos vencidos se mantienen visibles.
+                    </p>
+                  </div>
+                </div>{" "}
               </div>
-              <p className="help">
-                Los días no seleccionados son días de descanso. Los repasos
-                vencidos se mantienen visibles.
-              </p>
+              <div className="stack" hidden={section !== "memory"}>
+                <h3>SM-2 adaptado · versión 1</h3>
+                <div className="form-grid">
+                  <Field label="Primer intervalo (días)">
+                    <input
+                      type="number"
+                      min="1"
+                      max="30"
+                      value={prefs.rules.firstDays}
+                      onChange={(e) =>
+                        setPrefs({
+                          ...prefs,
+                          rules: { ...prefs.rules, firstDays: +e.target.value },
+                        })
+                      }
+                    />
+                  </Field>
+                  <Field label="Segundo intervalo con Bien (días)">
+                    <input
+                      type="number"
+                      min="1"
+                      max="60"
+                      value={prefs.rules.secondDays}
+                      onChange={(e) =>
+                        setPrefs({
+                          ...prefs,
+                          rules: {
+                            ...prefs.rules,
+                            secondDays: +e.target.value,
+                          },
+                        })
+                      }
+                    />
+                  </Field>
+                  <Field label="Intervalo máximo (días)">
+                    <input
+                      type="number"
+                      min="1"
+                      max="3650"
+                      value={prefs.rules.maxDays}
+                      onChange={(e) =>
+                        setPrefs({
+                          ...prefs,
+                          rules: { ...prefs.rules, maxDays: +e.target.value },
+                        })
+                      }
+                    />
+                  </Field>
+                  <Field label="Multiplicador Regular">
+                    <input
+                      type="number"
+                      min="1"
+                      max="2"
+                      step="0.05"
+                      value={prefs.rules.regularMultiplier}
+                      onChange={(e) =>
+                        setPrefs({
+                          ...prefs,
+                          rules: {
+                            ...prefs.rules,
+                            regularMultiplier: +e.target.value,
+                          },
+                        })
+                      }
+                    />
+                  </Field>
+                </div>
+                <p className="help">
+                  MAL = 1/5: vuelve al primer intervalo y reduce facilidad.
+                  REGULAR = 3/5: avance conservador. BIEN = 5/5: primero 1 día,
+                  después 6, y luego intervalo × facilidad. Los cambios se
+                  aplican a nuevos eventos; cada registro conserva sus reglas.
+                </p>
+              </div>
+              <Button>
+                {section === "goals"
+                  ? "Guardar objetivos"
+                  : section === "memory"
+                    ? "Guardar reglas"
+                    : "Guardar apariencia"}
+              </Button>
+            </form>
+          </section>
+          <section
+            className="panel stack settings-section"
+            hidden={section !== "notifications"}
+          >
+            <div className="section-title">
+              <h2>Avisos y recordatorios</h2>
+              <Bell size={20} />
             </div>
-            <h3>Repetición espaciada · SM-2 adaptado, versión 1</h3>
-            <div className="form-grid">
-              <Field label="Primer intervalo (días)">
-                <input
-                  type="number"
-                  min="1"
-                  max="30"
-                  value={prefs.rules.firstDays}
-                  onChange={(e) =>
-                    setPrefs({
-                      ...prefs,
-                      rules: { ...prefs.rules, firstDays: +e.target.value },
-                    })
-                  }
-                />
-              </Field>
-              <Field label="Segundo intervalo con Bien (días)">
-                <input
-                  type="number"
-                  min="1"
-                  max="60"
-                  value={prefs.rules.secondDays}
-                  onChange={(e) =>
-                    setPrefs({
-                      ...prefs,
-                      rules: { ...prefs.rules, secondDays: +e.target.value },
-                    })
-                  }
-                />
-              </Field>
-              <Field label="Intervalo máximo (días)">
-                <input
-                  type="number"
-                  min="1"
-                  max="3650"
-                  value={prefs.rules.maxDays}
-                  onChange={(e) =>
-                    setPrefs({
-                      ...prefs,
-                      rules: { ...prefs.rules, maxDays: +e.target.value },
-                    })
-                  }
-                />
-              </Field>
-              <Field label="Multiplicador Regular">
-                <input
-                  type="number"
-                  min="1"
-                  max="2"
-                  step="0.05"
-                  value={prefs.rules.regularMultiplier}
-                  onChange={(e) =>
-                    setPrefs({
-                      ...prefs,
-                      rules: {
-                        ...prefs.rules,
-                        regularMultiplier: +e.target.value,
-                      },
-                    })
-                  }
-                />
-              </Field>
-            </div>
-            <p className="help">
-              MAL = 1/5: vuelve al primer intervalo y reduce facilidad. REGULAR
-              = 3/5: avance conservador. BIEN = 5/5: primero 1 día, después 6, y
-              luego intervalo × facilidad. Los cambios se aplican a nuevos
-              eventos; cada registro conserva sus reglas.
-            </p>
-            <Button>Guardar preferencias</Button>
-          </form>
-        </section>
-        <section className="panel stack">
-          <div className="section-title">
-            <h2>Avisos y recordatorios</h2>
-            <Bell size={20} />
-          </div>
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={prefs.reminders}
-              onChange={(e) =>
-                setPrefs({ ...prefs, reminders: e.target.checked })
-              }
-            />
-            Activar recordatorios (guardar preferencias)
-          </label>
-          <Field label="Hora del resumen diario (0–23)">
-            <input
-              type="number"
-              min="0"
-              max="23"
-              value={prefs.reminderHour}
-              onChange={(e) =>
-                setPrefs({ ...prefs, reminderHour: +e.target.value })
-              }
-            />
-          </Field>
-          <p className="help">
-            Los pendientes y vencidos aparecen siempre en Hoy. Los avisos
-            externos necesitan permiso del dispositivo y un emisor configurado.
-          </p>
-          <Field label="Clave VAPID pública">
-            <input
-              value={vapid}
-              onChange={(e) => setVapid(e.target.value)}
-              placeholder="Clave pública del emisor push"
-            />
-          </Field>
-          <Button variant="secondary" onClick={() => void registerPush()}>
-            Activar push en este dispositivo
-          </Button>
-          {pushMessage && (
-            <p className="help" role="status">
-              {pushMessage}
-            </p>
-          )}
-          <Button
-            variant="ghost"
-            onClick={async () => {
-              try {
-                const reg = await navigator.serviceWorker.ready;
-                const subscription = await reg.pushManager.getSubscription();
-                if (subscription) {
-                  await subscription.unsubscribe();
-                  const row = data.push_subscriptions.find(
-                    (s) =>
-                      s.endpoint === subscription.endpoint && !s.deleted_at,
-                  );
-                  if (row)
-                    await save("push_subscriptions", {
-                      ...row,
-                      deleted_at: new Date().toISOString(),
-                    });
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={prefs.reminders}
+                onChange={(e) =>
+                  setPrefs({ ...prefs, reminders: e.target.checked })
                 }
-                setPushMessage("Push desactivado en este dispositivo.");
-              } catch (err) {
-                setPushMessage((err as Error).message);
-              }
-            }}
+              />
+              Activar recordatorios (guardar preferencias)
+            </label>
+            <Field label="Hora del resumen diario (0–23)">
+              <input
+                type="number"
+                min="0"
+                max="23"
+                value={prefs.reminderHour}
+                onChange={(e) =>
+                  setPrefs({ ...prefs, reminderHour: +e.target.value })
+                }
+              />
+            </Field>
+            <p className="help">
+              Los pendientes y vencidos aparecen siempre en Hoy. Los avisos
+              externos necesitan permiso del dispositivo y un emisor
+              configurado.
+            </p>
+            <Button onClick={() => void persistPrefs()}>
+              Guardar recordatorios
+            </Button>
+            <details className="disclosure">
+              <summary>Notificaciones push (opcional)</summary>
+              <div className="stack">
+                <Field label="Clave VAPID pública">
+                  <input
+                    value={vapid}
+                    onChange={(e) => setVapid(e.target.value)}
+                    placeholder="Clave pública del emisor push"
+                  />
+                </Field>
+                <Button variant="secondary" onClick={() => void registerPush()}>
+                  Activar push en este dispositivo
+                </Button>
+                {pushMessage && (
+                  <p className="help" role="status">
+                    {pushMessage}
+                  </p>
+                )}
+                <Button
+                  variant="ghost"
+                  onClick={async () => {
+                    try {
+                      const reg = await navigator.serviceWorker.ready;
+                      const subscription =
+                        await reg.pushManager.getSubscription();
+                      if (subscription) {
+                        await subscription.unsubscribe();
+                        const row = data.push_subscriptions.find(
+                          (s) =>
+                            s.endpoint === subscription.endpoint &&
+                            !s.deleted_at,
+                        );
+                        if (row)
+                          await save("push_subscriptions", {
+                            ...row,
+                            deleted_at: new Date().toISOString(),
+                          });
+                      }
+                      setPushMessage("Push desactivado en este dispositivo.");
+                    } catch (err) {
+                      setPushMessage((err as Error).message);
+                    }
+                  }}
+                >
+                  Desactivar push
+                </Button>
+              </div>
+            </details>
+            <h3>Instalar en iPhone</h3>
+            <p className="help">
+              Abre OpoPlan en Safari → Compartir → Añadir a pantalla de inicio.
+              Inicia sesión con tu misma cuenta. En iPad, Mac y Windows puedes
+              instalarla desde el menú del navegador cuando sea compatible.
+            </p>
+          </section>
+          <section
+            className="panel stack settings-section"
+            hidden={section !== "data"}
           >
-            Desactivar push
-          </Button>
-          <h3>Instalar en iPhone</h3>
-          <p className="help">
-            Abre OpoPlan en Safari → Compartir → Añadir a pantalla de inicio.
-            Inicia sesión con tu misma cuenta. En iPad, Mac y Windows puedes
-            instalarla desde el menú del navegador cuando sea compatible.
-          </p>
-        </section>
-        <section className="panel stack">
-          <h2>Copias de seguridad</h2>
-          <p className="help">
-            Incluye temario, relaciones, sesiones, repasos, agenda, resultados,
-            preferencias e instantáneas. Excluye tokens de acceso y
-            suscripciones push de este dispositivo.
-          </p>
-          <Button
-            variant="secondary"
-            onClick={() =>
-              download(
-                "OpoPlan-copia-" +
-                  dayAt(new Date(), preferences.timezone) +
-                  ".json",
-                JSON.stringify(backup(data, owner), null, 2),
-              )
-            }
-          >
-            <Download size={17} />
-            Descargar copia completa
-          </Button>
-          <div className="heading-actions">
+            <h2>Copias de seguridad</h2>
+            <p className="help">
+              Incluye temario, relaciones, sesiones, repasos, agenda,
+              resultados, preferencias e instantáneas. Excluye tokens de acceso
+              y suscripciones push de este dispositivo.
+            </p>
             <Button
-              variant="ghost"
+              variant="secondary"
               onClick={() =>
                 download(
-                  "OpoPlan-repasos.csv",
-                  toCSV(data.memory_events),
-                  "text/csv",
+                  "OpoPlan-copia-" +
+                    dayAt(new Date(), preferences.timezone) +
+                    ".json",
+                  JSON.stringify(backup(data, owner), null, 2),
                 )
               }
             >
-              Repasos CSV
+              <Download size={17} />
+              Descargar copia completa
             </Button>
-            <Button
-              variant="ghost"
-              onClick={() =>
-                download("OpoPlan-temario.csv", toCSV(data.nodes), "text/csv")
-              }
-            >
-              Temario CSV
-            </Button>
-          </div>
-          <Field label="Importar copia JSON">
-            <input
-              type="file"
-              accept=".json"
-              onChange={async (e) => {
-                const f = e.target.files?.[0];
-                if (f) {
-                  setBackupText(await f.text());
-                  setImportPreview(null);
-                }
-              }}
-            />
-          </Field>
-          <Field label="O pega el JSON">
-            <textarea
-              rows={4}
-              value={backupText}
-              onChange={(e) => {
-                setBackupText(e.target.value);
-                setImportPreview(null);
-              }}
-            />
-          </Field>
-          <Button
-            variant="secondary"
-            onClick={() => {
-              try {
-                setImportPreview(
-                  restoreChanges(parseBackup(backupText), owner, data),
-                );
-                setError("");
-              } catch (err) {
-                setError((err as Error).message);
-              }
-            }}
-          >
-            <Upload size={17} />
-            Validar y previsualizar copia
-          </Button>
-          {importPreview && (
-            <div className="import-preview">
-              <h3>{importPreview.changes.length} registros nuevos</h3>
-              <p>
-                {importPreview.duplicates.length} identificadores ya existentes
-                se conservarán. La importación es un solo lote y no reemplaza
-                datos existentes.
-              </p>
-              <ul>
-                {[...new Set(importPreview.changes.map((c) => c.table))].map(
-                  (t) => (
-                    <li key={t}>
-                      {t}:{" "}
-                      {
-                        importPreview.changes.filter((c) => c.table === t)
-                          .length
-                      }
-                    </li>
-                  ),
-                )}
-              </ul>
+            <div className="heading-actions">
               <Button
-                disabled={busy || !importPreview.changes.length}
-                onClick={async () => {
-                  setBusy(true);
-                  try {
-                    await commit(importPreview.changes);
-                    setImportPreview(null);
-                    setBackupText("");
-                  } catch (err) {
-                    setError((err as Error).message);
-                  } finally {
-                    setBusy(false);
-                  }
-                }}
+                variant="ghost"
+                onClick={() =>
+                  download(
+                    "OpoPlan-repasos.csv",
+                    toCSV(data.memory_events),
+                    "text/csv",
+                  )
+                }
               >
-                Confirmar restauración
+                Repasos CSV
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={() =>
+                  download("OpoPlan-temario.csv", toCSV(data.nodes), "text/csv")
+                }
+              >
+                Temario CSV
               </Button>
             </div>
-          )}
-        </section>
-        <section className="panel stack">
-          <h2>Categorías de práctica</h2>
-          {active(data.categories).map((c) => (
-            <div className="inline-form" key={c.id}>
+            <Field label="Importar copia JSON">
               <input
-                aria-label={"Nombre de " + c.name}
-                defaultValue={c.name}
-                onBlur={async (e) => {
-                  if (
-                    e.target.value.trim() &&
-                    e.target.value.trim() !== c.name
-                  ) {
-                    try {
-                      await save("categories", {
-                        ...c,
-                        name: e.target.value.trim(),
-                      });
-                    } catch (err) {
-                      setError((err as Error).message);
-                    }
+                type="file"
+                accept=".json"
+                onChange={async (e) => {
+                  const f = e.target.files?.[0];
+                  if (f) {
+                    setBackupText(await f.text());
+                    setImportPreview(null);
                   }
                 }}
               />
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  if (
-                    confirm(
-                      "¿Archivar la categoría? Se conservarán los resultados.",
-                    )
-                  )
-                    void save("categories", {
-                      ...c,
-                      deleted_at: new Date().toISOString(),
-                    });
+            </Field>
+            <Field label="O pega el JSON">
+              <textarea
+                rows={4}
+                value={backupText}
+                onChange={(e) => {
+                  setBackupText(e.target.value);
+                  setImportPreview(null);
                 }}
-              >
-                Archivar
-              </Button>
-            </div>
-          ))}
-          <form
-            className="inline-form"
-            onSubmit={async (e) => {
-              e.preventDefault();
-              try {
-                await save("categories", {
-                  ...base(owner),
-                  name: newCategory.trim(),
-                  color: "#287462",
-                });
-                setNewCategory("");
-              } catch (err) {
-                setError((err as Error).message);
-              }
-            }}
+              />
+            </Field>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                try {
+                  setImportPreview(
+                    restoreChanges(parseBackup(backupText), owner, data),
+                  );
+                  setError("");
+                } catch (err) {
+                  setError((err as Error).message);
+                }
+              }}
+            >
+              <Upload size={17} />
+              Validar y previsualizar copia
+            </Button>
+            {importPreview && (
+              <div className="import-preview">
+                <h3>{importPreview.changes.length} registros nuevos</h3>
+                <p>
+                  {importPreview.duplicates.length} identificadores ya
+                  existentes se conservarán. La importación es un solo lote y no
+                  reemplaza datos existentes.
+                </p>
+                <ul>
+                  {[...new Set(importPreview.changes.map((c) => c.table))].map(
+                    (t) => (
+                      <li key={t}>
+                        {t}:{" "}
+                        {
+                          importPreview.changes.filter((c) => c.table === t)
+                            .length
+                        }
+                      </li>
+                    ),
+                  )}
+                </ul>
+                <Button
+                  disabled={busy || !importPreview.changes.length}
+                  onClick={async () => {
+                    setBusy(true);
+                    try {
+                      await commit(importPreview.changes);
+                      setImportPreview(null);
+                      setBackupText("");
+                    } catch (err) {
+                      setError((err as Error).message);
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                >
+                  Confirmar restauración
+                </Button>
+              </div>
+            )}
+          </section>
+          <section
+            className="panel stack settings-section"
+            hidden={section !== "categories"}
           >
-            <input
-              aria-label="Nueva categoría"
-              placeholder="Nueva categoría"
-              required
-              value={newCategory}
-              onChange={(e) => setNewCategory(e.target.value)}
-            />
-            <Button variant="secondary">Añadir</Button>
-          </form>
-          <h3>Cuenta</h3>
-          <p className="help">
-            La recuperación de contraseña está disponible en la pantalla de
-            acceso. Tus datos se vinculan a la cuenta de correo de Supabase.
-          </p>
-          <Button
-            variant="ghost"
-            onClick={async () => {
-              const { data } = await client.auth.getUser();
-              if (data.user?.email) {
-                const { error } = await client.auth.resetPasswordForEmail(
-                  data.user.email,
-                  { redirectTo: location.origin },
-                );
-                notify(
-                  error ? error.message : "Enlace de recuperación enviado.",
-                );
-              }
-            }}
-          >
-            Enviar enlace de recuperación
-          </Button>
-        </section>
+            <h2>Categorías de práctica</h2>
+            {active(data.categories).map((c) => (
+              <div className="inline-form" key={c.id}>
+                <input
+                  aria-label={"Nombre de " + c.name}
+                  defaultValue={c.name}
+                  onBlur={async (e) => {
+                    if (
+                      e.target.value.trim() &&
+                      e.target.value.trim() !== c.name
+                    ) {
+                      try {
+                        await save("categories", {
+                          ...c,
+                          name: e.target.value.trim(),
+                        });
+                      } catch (err) {
+                        setError((err as Error).message);
+                      }
+                    }
+                  }}
+                />
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    if (
+                      confirm(
+                        "¿Archivar la categoría? Se conservarán los resultados.",
+                      )
+                    )
+                      void save("categories", {
+                        ...c,
+                        deleted_at: new Date().toISOString(),
+                      });
+                  }}
+                >
+                  Archivar
+                </Button>
+              </div>
+            ))}
+            <form
+              className="inline-form"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                try {
+                  await save("categories", {
+                    ...base(owner),
+                    name: newCategory.trim(),
+                    color: "#287462",
+                  });
+                  setNewCategory("");
+                } catch (err) {
+                  setError((err as Error).message);
+                }
+              }}
+            >
+              <input
+                aria-label="Nueva categoría"
+                placeholder="Nueva categoría"
+                required
+                value={newCategory}
+                onChange={(e) => setNewCategory(e.target.value)}
+              />
+              <Button variant="secondary">Añadir</Button>
+            </form>
+            <h3>Cuenta</h3>
+            <p className="help">
+              La recuperación de contraseña está disponible en la pantalla de
+              acceso. Tus datos se vinculan a la cuenta de correo de Supabase.
+            </p>
+            <Button
+              variant="ghost"
+              onClick={async () => {
+                const { data } = await client.auth.getUser();
+                if (data.user?.email) {
+                  const { error } = await client.auth.resetPasswordForEmail(
+                    data.user.email,
+                    { redirectTo: location.origin },
+                  );
+                  notify(
+                    error ? error.message : "Enlace de recuperación enviado.",
+                  );
+                }
+              }}
+            >
+              Enviar enlace de recuperación
+            </Button>
+          </section>
+        </div>
       </div>
       <ErrorText error={error} />
       <Modal

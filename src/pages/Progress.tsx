@@ -47,7 +47,8 @@ import {
 import { effectiveEvents, mastery } from "../core/memory";
 import { toCSV, download } from "../core/import";
 const colors = ["#216b58", "#a2bc36", "#c46252"];
-export function Progress() {
+import type { Route } from "../App";
+export function Progress({ navigate }: { navigate: (r: Route) => void }) {
   const { data, oppositionId, preferences, commit, owner } = useApp(),
     today = dayAt(new Date(), preferences.timezone),
     [from, setFrom] = useState(addDays(today, -29)),
@@ -59,6 +60,11 @@ export function Progress() {
     [date, setDate] = useState(""),
     [notes, setNotes] = useState(""),
     [error, setError] = useState("");
+  const [tab, setTab] = useState("overview"),
+    [boardLimit, setBoardLimit] = useState(60);
+  const hasActivity = active(data.sessions).some(
+    (s) => s.opposition_id === oppositionId,
+  );
   const stats = statistics(
       data,
       oppositionId,
@@ -209,7 +215,7 @@ export function Progress() {
       <div className="page-heading">
         <div>
           <div className="eyebrow">REGISTROS REALES, PERSPECTIVA CLARA</div>
-          <h1>Así está tu preparación.</h1>
+          <h1>Cada avance cuenta.</h1>
           <p>
             Tiempo, vueltas y memoria. Cada indicador responde a una pregunta
             distinta.
@@ -272,328 +278,404 @@ export function Progress() {
           </select>
         </Field>
       </div>
-      <div className="stat-grid">
-        <Stat
-          label="TIEMPO DEL PERIODO"
-          value={minutesLabel(stats.total)}
-          detail={`${stats.sessions.length} sesiones reales`}
-          accent
-        />
-        <Stat
-          label="DÍAS ACTIVOS"
-          value={stats.activeDays}
-          detail={`Racha más larga del periodo: ${stats.bestStreak} días`}
-        />
-        <Stat
-          label="MEMORIA"
-          value={reviews.length}
-          detail="Repasos efectivos · una pasada por bloque y día"
-        />
-        <Stat
-          label="PLANIFICACIÓN"
-          value={`${tasks.length ? Math.round((completed / tasks.length) * 100) : 0}%`}
-          detail={`${completed}/${tasks.length} previstas completadas`}
-        />
-      </div>
-      <div className="analytics-grid">
-        <section className="panel chart-panel">
-          <h2>Tiempo de estudio</h2>
-          {monthly && (
-            <p className="help">
-              Agrupado por meses; incluye todo el periodo seleccionado.
-            </p>
-          )}
-          <div className="chart">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartDays}>
-                <CartesianGrid vertical={false} stroke="var(--line)" />
-                <XAxis dataKey="day" tick={{ fontSize: 12 }} minTickGap={24} />
-                <YAxis unit=" m" tick={{ fontSize: 12 }} />
-                <Tooltip />
-                <Bar
-                  dataKey="minutes"
-                  name="Minutos"
-                  fill="#287462"
-                  radius={[4, 4, 0, 0]}
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="time-breakdown">
-            {Object.entries(stats.byKind).map(([k, v]) => (
-              <div key={k}>
-                <span>
-                  {
-                    {
-                      study: "Estudio nuevo",
-                      review: "Repaso",
-                      practice: "Práctica",
-                    }[k as SessionKind]
-                  }
-                </span>
-                <strong>{minutesLabel(v)}</strong>
-              </div>
-            ))}
-          </div>
-        </section>
+      {!hasActivity && (
         <section className="panel">
-          <h2>Tiempo por materia</h2>
-          {Object.entries(stats.bySubject)
-            .sort((a, c) => c[1] - a[1])
-            .map(([name, seconds]) => (
-              <div className="subject-stat" key={name}>
-                <div>
-                  <strong>{name}</strong>
-                  <span>{minutesLabel(seconds)}</span>
-                </div>
-                <ProgressBar
-                  value={stats.total ? (seconds / stats.total) * 100 : 0}
-                />
-              </div>
-            ))}
-          {!stats.total && (
-            <p className="muted">
-              Se calcula con el tiempo repartido entre bloques.
-            </p>
-          )}
-        </section>
-        <section className="panel">
-          <h2>Cobertura por vuelta</h2>
-          <p className="help">
-            Temario activo actual. Los filtros de fecha no alteran las vueltas
-            acumuladas.
-          </p>
-          {cov.map((c) => (
-            <div className="coverage-row" key={c.pass}>
-              <div>
-                <strong>
-                  {c.pass === 1
-                    ? "1.ª vuelta · estudio inicial"
-                    : `${c.pass}.ª vuelta`}
-                </strong>
-                <span>
-                  {c.count}/{c.total} bloques
-                </span>
-              </div>
-              <ProgressBar value={c.total ? (c.count / c.total) * 100 : 0} />
-            </div>
-          ))}
-          <p className="help">
-            Añadir bloques cambia el denominador actual. Las instantáneas
-            guardan la cobertura que existía al registrar cada sesión.
-          </p>
-        </section>
-        <section className="panel">
-          <h2>Cómo estás recordando</h2>
-          {reviews.length ? (
-            <div className="chart">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    isAnimationActive={false}
-                    data={pie}
-                    dataKey="value"
-                    nameKey="name"
-                    innerRadius="50%"
-                    outerRadius="75%"
-                    paddingAngle={3}
-                  >
-                    {pie.map((v, i) => (
-                      <Cell key={v.name} fill={colors[i]} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-          ) : (
-            <Empty
-              title="Todavía sin valoraciones"
-              description="Registra Mal, Regular o Bien al terminar un repaso."
-            />
-          )}
-          <p className="help">
-            El dominio depende del recuerdo indicado, no del número de vueltas.
-          </p>
-        </section>
-        <section className="panel">
-          <h2>Previsto y realizado</h2>
-          <div className="comparison">
-            <div>
-              <span>Previsto</span>
-              <strong>{Math.round((planned / 60) * 10) / 10} h</strong>
-            </div>
-            <div>
-              <span>Real registrado</span>
-              <strong>{Math.round((stats.total / 3600) * 10) / 10} h</strong>
-            </div>
-          </div>
-          <p className="help">
-            El tiempo real incluye actividades no planificadas. Cada sesión suma
-            una sola vez.
-          </p>
-          <h3>Carga de los próximos 14 días</h3>
-          <div className="chart small">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={Array.from({ length: 14 }, (_, i) => {
-                  const day = addDays(today, i);
-                  return {
-                    day: labelDay(day, { day: "numeric", month: "short" }),
-                    minutes: b
-                      .filter(
-                        (n) =>
-                          states.get(n.id)?.enabled &&
-                          states.get(n.id)?.due === day,
-                      )
-                      .reduce((sum, n) => sum + n.estimated_minutes, 0),
-                  };
-                })}
-              >
-                <XAxis dataKey="day" minTickGap={15} tick={{ fontSize: 12 }} />
-                <YAxis />
-                <Tooltip />
-                <Bar
-                  dataKey="minutes"
-                  fill="#adbf46"
-                  name="Minutos estimados"
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-          <p className="help">
-            Incluye la próxima fecha de cada bloque. Los intervalos posteriores
-            dependerán de tus valoraciones.
-          </p>
-        </section>
-        <section className="panel">
-          <h2>Hasta el examen</h2>
-          {exam ? (
-            <>
-              <p>
-                Examen previsto:{" "}
-                <strong>
-                  {labelDay(exam, {
-                    day: "numeric",
-                    month: "long",
-                    year: "numeric",
-                  })}
-                </strong>
-              </p>
-              <strong className="projection">
-                {projected === null
-                  ? "Faltan registros para estimar"
-                  : `${projected}/${b.length} bloques`}
-              </strong>
-              <p className="help">
-                Estimación de cobertura inicial con la media de los últimos 28
-                días: {pace.toFixed(2)} bloques nuevos/día. Supone mantener ese
-                ritmo; no considera cambios de dificultad ni nuevos bloques.
-              </p>
-            </>
-          ) : (
-            <p className="muted">
-              Añade una fecha de examen en Configuración para consultar la
-              estimación.
-            </p>
-          )}
-          <p>
-            {pending.length} bloques pendientes de repaso ·{" "}
-            {b.filter((n) => states.get(n.id)?.rating === "mal").length} con
-            dominio bajo.
-          </p>
-          <div className="block-board">
-            {b.map((n) => (
-              <div
-                key={n.id}
-                title={nodePath(n, data.nodes)}
-                className={`board-item ${states.get(n.id)?.rating ?? (states.get(n.id)?.studied ? "studied" : "new")}`}
-              >
-                <strong>{n.name}</strong>
-                <small>
-                  {states.get(n.id)?.due && states.get(n.id)!.due! < today
-                    ? "Repaso vencido"
-                    : states.get(n.id)?.due === today
-                      ? "Repaso pendiente"
-                      : states.get(n.id)?.studied
-                        ? mastery(states.get(n.id)!)
-                        : active(data.session_blocks).some(
-                              (a) => a.node_id === n.id,
-                            )
-                          ? "En estudio"
-                          : "No empezado"}
-                </small>
-              </div>
-            ))}
-          </div>
-        </section>
-      </div>
-      <section className="panel history-panel">
-        <div className="section-title">
-          <h2>Historial de actividad</h2>
-          <span className="badge">{stats.sessions.length} sesiones</span>
-        </div>
-        <p className="help">
-          Al filtrar una materia, el total usa solo su tiempo asignado. La
-          duración de cada fila sigue mostrando la sesión completa.
-        </p>
-        {stats.sessions
-          .slice()
-          .sort((a, c) => c.started_at.localeCompare(a.started_at))
-          .map((s) => (
-            <div className="history-row" key={s.id}>
-              <strong>
-                {labelDay(dayAt(s.started_at, preferences.timezone))}
-              </strong>
-              <span>
-                {
-                  {
-                    study: "Estudio nuevo",
-                    review: "Repaso",
-                    practice: "Práctica",
-                  }[s.kind]
-                }
-                <small>
-                  {active(data.session_blocks)
-                    .filter((a) => a.session_id === s.id)
-                    .map(
-                      (a) => data.nodes.find((n) => n.id === a.node_id)?.name,
-                    )
-                    .join(" · ") ||
-                    s.notes ||
-                    "Sin bloque relacionado"}
-                </small>
-              </span>
-              <strong>{minutesLabel(s.duration_seconds)}</strong>
-              <Menu
-                items={[
-                  {
-                    label: "Corregir tiempo / fecha / notas",
-                    action: () => {
-                      setEditing(s);
-                      setMinutes(s.duration_seconds / 60);
-                      setDate(localInput(s.started_at, preferences.timezone));
-                      setNotes(s.notes);
-                      setError("");
-                    },
-                  },
-                  {
-                    label: "Anular sesión",
-                    action: () => void deleteSession(s),
-                    danger: true,
-                  },
-                ]}
-              />
-            </div>
-          ))}
-        {!stats.sessions.length && (
           <Empty
-            title="Sin actividad en este periodo"
-            description="Amplía las fechas o registra tu primera sesión."
+            title="Tu esfuerzo tendrá perspectiva"
+            description="Al registrar estudio verás tu tiempo, la cobertura por vueltas y cómo recuerdas cada bloque. Empieza con una sesión; no hace falta completar un tema."
+            action={
+              <>
+                <Button onClick={() => navigate("study")}>
+                  Registrar mi primera sesión
+                </Button>
+                <Button variant="ghost" onClick={() => navigate("syllabus")}>
+                  Ver mi temario
+                </Button>
+              </>
+            }
           />
-        )}
-      </section>
+        </section>
+      )}
+      {hasActivity && (
+        <>
+          <div
+            className="segmented progress-tabs"
+            aria-label="Secciones de progreso"
+          >
+            {[
+              { id: "overview", name: "Resumen" },
+              { id: "memory", name: "Memoria" },
+              { id: "planning", name: "Plan" },
+              { id: "history", name: "Historial" },
+            ].map((t) => (
+              <button
+                key={t.id}
+                className={tab === t.id ? "selected" : ""}
+                aria-pressed={tab === t.id}
+                onClick={() => setTab(t.id)}
+              >
+                {t.name}
+              </button>
+            ))}
+          </div>
+          <div className="stat-grid">
+            <Stat
+              label="TIEMPO DEL PERIODO"
+              value={minutesLabel(stats.total)}
+              detail={`${stats.sessions.length} sesiones reales`}
+              accent
+            />
+            <Stat
+              label="DÍAS ACTIVOS"
+              value={stats.activeDays}
+              detail={`Racha más larga del periodo: ${stats.bestStreak} días`}
+            />
+            <Stat
+              label="MEMORIA"
+              value={reviews.length}
+              detail="Repasos efectivos · una pasada por bloque y día"
+            />
+            <Stat
+              label="PLANIFICACIÓN"
+              value={`${tasks.length ? Math.round((completed / tasks.length) * 100) : 0}%`}
+              detail={`${completed}/${tasks.length} previstas completadas`}
+            />
+          </div>
+          <div className="analytics-grid">
+            <section className="panel chart-panel" hidden={tab !== "overview"}>
+              <h2>Tiempo de estudio</h2>
+              {monthly && (
+                <p className="help">
+                  Agrupado por meses; incluye todo el periodo seleccionado.
+                </p>
+              )}
+              {stats.total > 0 ? (
+                <div className="chart">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={chartDays}>
+                      <CartesianGrid vertical={false} stroke="var(--line)" />
+                      <XAxis
+                        dataKey="day"
+                        tick={{ fontSize: 12 }}
+                        minTickGap={24}
+                      />
+                      <YAxis unit=" m" tick={{ fontSize: 12 }} />
+                      <Tooltip />
+                      <Bar
+                        dataKey="minutes"
+                        name="Minutos"
+                        fill="var(--green)"
+                        isAnimationActive={false}
+                        radius={[4, 4, 0, 0]}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <p className="quiet-empty">
+                  No hay sesiones en este periodo. Amplía las fechas para
+                  consultar tu actividad.
+                </p>
+              )}
+              <div className="time-breakdown">
+                {Object.entries(stats.byKind).map(([k, v]) => (
+                  <div key={k}>
+                    <span>
+                      {
+                        {
+                          study: "Estudio nuevo",
+                          review: "Repaso",
+                          practice: "Práctica",
+                        }[k as SessionKind]
+                      }
+                    </span>
+                    <strong>{minutesLabel(v)}</strong>
+                  </div>
+                ))}
+              </div>
+            </section>
+            <section className="panel" hidden={tab !== "overview"}>
+              <h2>Tiempo por materia</h2>
+              {Object.entries(stats.bySubject)
+                .sort((a, c) => c[1] - a[1])
+                .map(([name, seconds]) => (
+                  <div className="subject-stat" key={name}>
+                    <div>
+                      <strong>{name}</strong>
+                      <span>{minutesLabel(seconds)}</span>
+                    </div>
+                    <ProgressBar
+                      value={stats.total ? (seconds / stats.total) * 100 : 0}
+                    />
+                  </div>
+                ))}
+              {!stats.total && (
+                <p className="muted">
+                  Se calcula con el tiempo repartido entre bloques.
+                </p>
+              )}
+            </section>
+            <section className="panel" hidden={tab !== "overview"}>
+              <h2>Cobertura por vuelta</h2>
+              <p className="help">
+                Temario activo actual. Los filtros de fecha no alteran las
+                vueltas acumuladas.
+              </p>
+              {cov.map((c) => (
+                <div className="coverage-row" key={c.pass}>
+                  <div>
+                    <strong>
+                      {c.pass === 1
+                        ? "1.ª vuelta · estudio inicial"
+                        : `${c.pass}.ª vuelta`}
+                    </strong>
+                    <span>
+                      {c.count}/{c.total} bloques
+                    </span>
+                  </div>
+                  <ProgressBar
+                    value={c.total ? (c.count / c.total) * 100 : 0}
+                  />
+                </div>
+              ))}
+              <p className="help">
+                Añadir bloques cambia el denominador actual. Las instantáneas
+                guardan la cobertura que existía al registrar cada sesión.
+              </p>
+            </section>
+            <section className="panel" hidden={tab !== "memory"}>
+              <h2>Cómo estás recordando</h2>
+              {reviews.length ? (
+                <div className="chart">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        isAnimationActive={false}
+                        data={pie}
+                        dataKey="value"
+                        nameKey="name"
+                        innerRadius="50%"
+                        outerRadius="75%"
+                        paddingAngle={3}
+                      >
+                        {pie.map((v, i) => (
+                          <Cell key={v.name} fill={colors[i]} />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <Empty
+                  title="Todavía sin valoraciones"
+                  description="Registra Mal, Regular o Bien al terminar un repaso."
+                />
+              )}
+              <p className="help">
+                El dominio depende del recuerdo indicado, no del número de
+                vueltas.
+              </p>
+            </section>
+            <section className="panel" hidden={tab !== "planning"}>
+              <h2>Previsto y realizado</h2>
+              <div className="comparison">
+                <div>
+                  <span>Previsto</span>
+                  <strong>{Math.round((planned / 60) * 10) / 10} h</strong>
+                </div>
+                <div>
+                  <span>Real registrado</span>
+                  <strong>
+                    {Math.round((stats.total / 3600) * 10) / 10} h
+                  </strong>
+                </div>
+              </div>
+              <p className="help">
+                El tiempo real incluye actividades no planificadas. Cada sesión
+                suma una sola vez.
+              </p>
+              <h3>Carga de los próximos 14 días</h3>
+              <div className="chart small">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={Array.from({ length: 14 }, (_, i) => {
+                      const day = addDays(today, i);
+                      return {
+                        day: labelDay(day, { day: "numeric", month: "short" }),
+                        minutes: b
+                          .filter(
+                            (n) =>
+                              states.get(n.id)?.enabled &&
+                              states.get(n.id)?.due === day,
+                          )
+                          .reduce((sum, n) => sum + n.estimated_minutes, 0),
+                      };
+                    })}
+                  >
+                    <XAxis
+                      dataKey="day"
+                      minTickGap={15}
+                      tick={{ fontSize: 12 }}
+                    />
+                    <YAxis />
+                    <Tooltip />
+                    <Bar
+                      dataKey="minutes"
+                      fill="var(--green)"
+                      isAnimationActive={false}
+                      name="Minutos estimados"
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <p className="help">
+                Incluye la próxima fecha de cada bloque. Los intervalos
+                posteriores dependerán de tus valoraciones.
+              </p>
+            </section>
+            <section className="panel" hidden={tab !== "planning"}>
+              <h2>Hasta el examen</h2>
+              {exam ? (
+                <>
+                  <p>
+                    Examen previsto:{" "}
+                    <strong>
+                      {labelDay(exam, {
+                        day: "numeric",
+                        month: "long",
+                        year: "numeric",
+                      })}
+                    </strong>
+                  </p>
+                  <strong className="projection">
+                    {projected === null
+                      ? "Faltan registros para estimar"
+                      : `${projected}/${b.length} bloques`}
+                  </strong>
+                  <p className="help">
+                    Estimación de cobertura inicial con la media de los últimos
+                    28 días: {pace.toFixed(2)} bloques nuevos/día. Supone
+                    mantener ese ritmo; no considera cambios de dificultad ni
+                    nuevos bloques.
+                  </p>
+                </>
+              ) : (
+                <p className="muted">
+                  Añade una fecha de examen en Configuración para consultar la
+                  estimación.
+                </p>
+              )}
+              <p>
+                {pending.length} bloques pendientes de repaso ·{" "}
+                {b.filter((n) => states.get(n.id)?.rating === "mal").length} con
+                dominio bajo.
+              </p>
+              <div className="block-board">
+                {b.slice(0, boardLimit).map((n) => (
+                  <div
+                    key={n.id}
+                    title={nodePath(n, data.nodes)}
+                    className={`board-item ${states.get(n.id)?.rating ?? (states.get(n.id)?.studied ? "studied" : "new")}`}
+                  >
+                    <strong>{n.name}</strong>
+                    <small>
+                      {states.get(n.id)?.due && states.get(n.id)!.due! < today
+                        ? "Repaso vencido"
+                        : states.get(n.id)?.due === today
+                          ? "Repaso pendiente"
+                          : states.get(n.id)?.studied
+                            ? mastery(states.get(n.id)!)
+                            : active(data.session_blocks).some(
+                                  (a) => a.node_id === n.id,
+                                )
+                              ? "En estudio"
+                              : "No empezado"}
+                    </small>
+                  </div>
+                ))}
+              </div>
+              {b.length > boardLimit && (
+                <Button
+                  variant="ghost"
+                  onClick={() => setBoardLimit((v) => v + 60)}
+                >
+                  Mostrar más bloques
+                </Button>
+              )}
+            </section>
+          </div>
+          <section className="panel history-panel" hidden={tab !== "history"}>
+            <div className="section-title">
+              <h2>Historial de actividad</h2>
+              <span className="badge">{stats.sessions.length} sesiones</span>
+            </div>
+            <p className="help">
+              Al filtrar una materia, el total usa solo su tiempo asignado. La
+              duración de cada fila sigue mostrando la sesión completa.
+            </p>
+            {stats.sessions
+              .slice()
+              .sort((a, c) => c.started_at.localeCompare(a.started_at))
+              .map((s) => (
+                <div className="history-row" key={s.id}>
+                  <strong>
+                    {labelDay(dayAt(s.started_at, preferences.timezone))}
+                  </strong>
+                  <span>
+                    {
+                      {
+                        study: "Estudio nuevo",
+                        review: "Repaso",
+                        practice: "Práctica",
+                      }[s.kind]
+                    }
+                    <small>
+                      {active(data.session_blocks)
+                        .filter((a) => a.session_id === s.id)
+                        .map(
+                          (a) =>
+                            data.nodes.find((n) => n.id === a.node_id)?.name,
+                        )
+                        .join(" · ") ||
+                        s.notes ||
+                        "Sin bloque relacionado"}
+                    </small>
+                  </span>
+                  <strong>{minutesLabel(s.duration_seconds)}</strong>
+                  <Menu
+                    items={[
+                      {
+                        label: "Corregir tiempo / fecha / notas",
+                        action: () => {
+                          setEditing(s);
+                          setMinutes(s.duration_seconds / 60);
+                          setDate(
+                            localInput(s.started_at, preferences.timezone),
+                          );
+                          setNotes(s.notes);
+                          setError("");
+                        },
+                      },
+                      {
+                        label: "Anular sesión",
+                        action: () => void deleteSession(s),
+                        danger: true,
+                      },
+                    ]}
+                  />
+                </div>
+              ))}
+            {!stats.sessions.length && (
+              <Empty
+                title="Sin actividad en este periodo"
+                description="Amplía las fechas o registra tu primera sesión."
+              />
+            )}
+          </section>
+        </>
+      )}
       <Modal
         title="Corregir sesión"
         open={!!editing}

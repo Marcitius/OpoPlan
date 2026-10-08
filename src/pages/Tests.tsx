@@ -85,7 +85,7 @@ export function Tests({ start }: { start: (o: SessionOptions) => void }) {
       <div className="page-heading">
         <div>
           <div className="eyebrow">PON A PRUEBA TU PREPARACIÓN</div>
-          <h1>Del estudio al resultado.</h1>
+          <h1>Pon tu avance a prueba.</h1>
           <p>
             Inglés, ortografía, psicotécnicos y simulacros. Toda tu práctica, en
             un lugar.
@@ -106,8 +106,8 @@ export function Tests({ start }: { start: (o: SessionOptions) => void }) {
             }
           >
             <span>{c.category.name}</span>
-            <strong>{c.accuracy === null ? "—" : `${c.accuracy}%`}</strong>
-            <small>{c.count} prueba(s)</small>
+            {c.accuracy !== null && <strong>{c.accuracy}%</strong>}
+            {c.count > 0 && <small>{c.count} prueba(s)</small>}
           </button>
         ))}
       </div>
@@ -140,68 +140,93 @@ export function Tests({ start }: { start: (o: SessionOptions) => void }) {
           Exportar CSV
         </Button>
       </div>
-      <div className="stat-grid three">
-        <Stat label="PRUEBAS REGISTRADAS" value={tests.length} />
-        <Stat
-          label="PORCENTAJE DE ACIERTO"
-          value={`${questions ? Math.round((correct / questions) * 100) : 0}%`}
-          detail={`${correct}/${questions} preguntas`}
-        />
-        <Stat
-          label="TIEMPO DE PRÁCTICA"
-          value={minutesLabel(
-            tests.reduce(
-              (sum, t) =>
-                sum +
-                (data.sessions.find((s) => s.id === t.session_id)
-                  ?.duration_seconds ?? 0),
-              0,
-            ),
-          )}
-          accent
-        />
-      </div>
-      <section className="panel">
-        <h2>Evolución de puntuaciones</h2>
-        <p className="help">
-          Nota / nota máxima × 100. Selecciona un tipo de prueba para comparar
-          resultados equivalentes.
-        </p>
-        {tests.length ? (
-          <div className="chart">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chart}>
-                <CartesianGrid stroke="var(--line)" vertical={false} />
-                <XAxis dataKey="date" minTickGap={20} />
-                <YAxis unit="%" />
-                <Tooltip />
-                <Line
-                  type="monotone"
-                  dataKey="score"
-                  name="Puntuación relativa (%)"
-                  stroke="#287462"
-                  strokeWidth={3}
-                />
-              </LineChart>
-            </ResponsiveContainer>
+      {all.length > 0 && (
+        <>
+          <div className="stat-grid three">
+            <Stat label="PRUEBAS REGISTRADAS" value={tests.length} />
+            <Stat
+              label="PORCENTAJE DE ACIERTO"
+              value={`${questions ? Math.round((correct / questions) * 100) : 0}%`}
+              detail={`${correct}/${questions} preguntas`}
+            />
+            <Stat
+              label="TIEMPO DE PRÁCTICA"
+              value={minutesLabel(
+                tests.reduce(
+                  (sum, t) =>
+                    sum +
+                    (data.sessions.find((s) => s.id === t.session_id)
+                      ?.duration_seconds ?? 0),
+                  0,
+                ),
+              )}
+              accent
+            />
           </div>
-        ) : (
+          <section className="panel" hidden={tests.length < 2}>
+            <h2>Evolución de puntuaciones</h2>
+            <p className="help">
+              Nota / nota máxima × 100. Selecciona un tipo de prueba para
+              comparar resultados equivalentes.
+            </p>
+            {tests.length ? (
+              <div className="chart">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={chart}>
+                    <CartesianGrid stroke="var(--line)" vertical={false} />
+                    <XAxis dataKey="date" minTickGap={20} />
+                    <YAxis unit="%" />
+                    <Tooltip />
+                    <Line
+                      type="monotone"
+                      dataKey="score"
+                      name="Puntuación relativa (%)"
+                      stroke="var(--green)"
+                      isAnimationActive={false}
+                      strokeWidth={3}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <Empty
+                title="La primera prueba marca el punto de partida"
+                description="Registra resultados reales y observa su evolución."
+                action={
+                  <Button
+                    variant="secondary"
+                    onClick={() => start({ kind: "practice", test: true })}
+                  >
+                    Registrar primera prueba
+                  </Button>
+                }
+              />
+            )}
+          </section>
+        </>
+      )}
+      {!all.length && (
+        <section className="panel">
           <Empty
-            title="La primera prueba marca el punto de partida"
-            description="Registra resultados reales y observa su evolución."
+            icon={<ClipboardCheck size={30} />}
+            title="Tu primera prueba, tu punto de partida"
+            description="Registra un test de inglés, ortografía, psicotécnicos o un simulacro. Verás tus resultados y los bloques que necesitan atención."
             action={
-              <Button
-                variant="secondary"
-                onClick={() => start({ kind: "practice", test: true })}
-              >
+              <Button onClick={() => start({ kind: "practice", test: true })}>
                 Registrar primera prueba
               </Button>
             }
           />
-        )}
-      </section>
-      <section className="panel history-panel">
+        </section>
+      )}
+      <section className="panel history-panel" hidden={!tests.length}>
         <h2>Historial de pruebas</h2>
+        {tests.length === 1 && (
+          <p className="help">
+            Tu punto de partida está registrado. Con otra prueba comparable
+            verás tu evolución.
+          </p>
+        )}
         {tests
           .slice()
           .reverse()
@@ -269,7 +294,14 @@ export function Tests({ start }: { start: (o: SessionOptions) => void }) {
             );
           })}
       </section>
-      <section className="panel">
+      <section
+        className="panel"
+        hidden={
+          !tests.some((t) =>
+            active(data.test_links).some((l) => l.test_id === t.id),
+          )
+        }
+      >
         <h2>Bloques con errores vinculados</h2>
         {data.nodes
           .filter((n) => n.opposition_id === oppositionId)

@@ -11,6 +11,8 @@ import {
   Clock,
   ClipboardCheck,
   ArrowUpRight,
+  ChevronRight as ArrowRight,
+  Sparkles,
 } from "lucide-react";
 import { useApp } from "../data/context";
 import type { SessionOptions } from "../components/SessionForm";
@@ -32,6 +34,7 @@ import {
   monthGridStart,
   labelDay,
   minutesLabel,
+  daysBetween,
 } from "../core/dates";
 import { blocks, getStates, statistics, nodePath } from "../core/stats";
 import { priority } from "../core/memory";
@@ -40,9 +43,11 @@ import type { Route } from "../App";
 export function Today({
   start,
   navigate,
+  initialCalendar = false,
 }: {
   start: (o: SessionOptions) => void;
   navigate: (r: Route) => void;
+  initialCalendar?: boolean;
 }) {
   const {
       owner,
@@ -112,7 +117,7 @@ export function Today({
       (t) => t.status === "completed" && t.scheduled_day === today,
     );
   const [editing, setEditing] = useState<PlanTask | "new" | null>(null),
-    [calendar, setCalendar] = useState(false),
+    [calendar, setCalendar] = useState(initialCalendar),
     [view, setView] = useState<"day" | "week" | "month">("week"),
     [selected, setSelected] = useState(today);
   const studied = b.filter((n) => states.get(n.id)?.studied).length;
@@ -223,151 +228,348 @@ export function Today({
   );
   const span = view === "day" ? 1 : view === "week" ? 7 : 42;
   const calendarStart = view === "month" ? monthGridStart(selected) : selected;
+  const recent = active(data.sessions)
+    .filter((s) => s.opposition_id === oppositionId)
+    .sort((a, b) => b.started_at.localeCompare(a.started_at));
+  const lastStudy = recent.find(
+    (s) =>
+      s.kind === "study" &&
+      active(data.session_blocks).some(
+        (a) => a.session_id === s.id && b.some((n) => n.id === a.node_id),
+      ),
+  );
+  const lastBlock = lastStudy
+    ? b.find((n) =>
+        active(data.session_blocks).some(
+          (a) => a.session_id === lastStudy.id && a.node_id === n.id,
+        ),
+      )
+    : undefined;
+  const yesterday = recent.filter(
+    (s) => dayAt(s.started_at, preferences.timezone) === addDays(today, -1),
+  );
+  function sessionContents(id: string) {
+    const content = active(data.session_blocks)
+      .filter((a) => a.session_id === id)
+      .map((a) => data.nodes.find((n) => n.id === a.node_id)?.name)
+      .filter(Boolean)
+      .join(" · ");
+    const result = active(data.test_results).find((t) => t.session_id === id);
+    return content || result?.name || "Práctica";
+  }
+  const displayName = data.profiles
+    .find((p) => p.id === owner)
+    ?.display_name.trim()
+    .split(" ")[0];
+  const hour = Number(
+    new Intl.DateTimeFormat("es", {
+      timeZone: preferences.timezone,
+      hour: "numeric",
+      hourCycle: "h23",
+    }).format(new Date()),
+  );
+  const greeting =
+    hour < 12 ? "Buenos días" : hour < 20 ? "Buenas tardes" : "Buenas noches";
+  const goalProgress = dailyTarget
+    ? Math.min(100, (stats.total / (dailyTarget * 60)) * 100)
+    : 0;
+  async function continueStudy() {
+    if (timer || !lastBlock) {
+      navigate("study");
+      return;
+    }
+    await setTimer({
+      id: crypto.randomUUID(),
+      owner_id: owner,
+      oppositionId,
+      kind: "study",
+      nodeIds: [lastBlock.id],
+      taskId: null,
+      startedAt: new Date().toISOString(),
+      runningSince: Date.now(),
+      accumulated: 0,
+      mode: "continuous",
+      phase: "work",
+      phaseAccumulated: 0,
+      workSeconds: preferences.pomodoroWork * 60,
+      breakSeconds: preferences.pomodoroBreak * 60,
+    });
+    navigate("study");
+  }
   return (
     <>
-      <div className="page-heading">
+      <div className="page-heading today-heading">
         <div>
           <div className="eyebrow">
             {labelDay(today, {
               weekday: "long",
               day: "numeric",
               month: "long",
-            }).toLocaleUpperCase("es")}
+            })}
           </div>
           <h1>
-            Tu plan para hoy<span className="lime-dot">.</span>
+            {greeting}
+            {displayName ? `, ${displayName}` : ""}.
           </h1>
-          <p>Un bloque de estudio. Un recuerdo más sólido. Un paso adelante.</p>
+          <p>
+            {opposition?.name} ·{" "}
+            {isStudyDay
+              ? "Un paso más, bloque a bloque."
+              : "Hoy puedes descansar. Tu plan sigue aquí."}
+          </p>
         </div>
         <div className="heading-actions">
           <Button variant="secondary" onClick={() => setCalendar((v) => !v)}>
             <CalendarDays size={18} />
             Agenda
           </Button>
-          <Button variant="secondary" onClick={() => setEditing("new")}>
+          <Button variant="ghost" onClick={() => setEditing("new")}>
             <Plus size={18} />
             Actividad
           </Button>
         </div>
       </div>
-      <div className="stat-grid">
-        <Stat
-          label="TIEMPO ESTUDIADO"
-          value={minutesLabel(stats.total)}
-          detail={`Objetivo: ${dailyTarget} min${isStudyDay ? "" : " · descanso"}`}
-          accent
-        />
-        <Stat
-          label="REPASOS PENDIENTES"
-          value={reviews.length}
-          detail={`${reviews.filter((n) => states.get(n.id)!.due! < today).length} vencidos`}
-        />
-        <Stat
-          label="BLOQUES ESTUDIADOS"
-          value={
-            <>
-              {studied}
-              <em> / {b.length}</em>
-            </>
-          }
-          detail={`${b.length ? Math.round((studied / b.length) * 100) : 0}% del temario activo`}
-        />
-        <Stat
-          label="ACTIVIDADES REALIZADAS"
-          value={stats.sessions.length}
-          detail={`${completed.length} actividades previstas completadas`}
-        />
-      </div>
+      {!recent.length && (
+        <section className="getting-started">
+          <span className="activity-icon">
+            <Sparkles size={22} />
+          </span>
+          <div>
+            <h2>Tu preparación empieza aquí.</h2>
+            <p>
+              {!data.nodes.some(
+                (n) => n.opposition_id === oppositionId && !n.deleted_at,
+              )
+                ? "Añade tu temario. Divídelo en bloques pequeños y registra lo que estudias de verdad."
+                : !b.length
+                  ? "Ya tienes la estructura. Entra en una materia y añade un bloque revisable para empezar."
+                  : "Tu temario está listo. Registra tu primer bloque; cuando lo completes, programaremos su repaso."}
+            </p>
+            <div className="onboarding-steps">
+              <span className="selected">✓ Tu plan</span>
+              <span className={b.length ? "selected" : ""}>
+                {b.length ? "✓" : "2"} Temario
+              </span>
+              <span>3 Primera sesión</span>
+            </div>
+            <div className="heading-actions">
+              <Button onClick={() => navigate(b.length ? "study" : "syllabus")}>
+                {b.length ? "Empezar a estudiar" : "Preparar mi temario"}
+                <ArrowRight size={17} />
+              </Button>
+              {b.length > 0 ? (
+                <Button
+                  variant="ghost"
+                  onClick={() => start({ kind: "study" })}
+                >
+                  Registrar estudio anterior
+                </Button>
+              ) : (
+                <Button
+                  variant="ghost"
+                  onClick={() => start({ kind: "practice", test: true })}
+                >
+                  Registrar una práctica
+                </Button>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
+      {(b.length > 0 || recent.length > 0) && (
+        <>
+          <section className="daily-card" aria-label="Progreso diario">
+            <div>
+              <span className="daily-label">Tu tiempo de hoy</span>
+              <strong className="daily-time">
+                {minutesLabel(stats.total)}
+              </strong>
+              <p>
+                {dailyTarget
+                  ? `de ${dailyTarget} min de objetivo`
+                  : "Día sin objetivo de tiempo"}
+              </p>
+              <span className="daily-completed">
+                <Check size={15} />
+                {stats.sessions.length}{" "}
+                {stats.sessions.length === 1
+                  ? "actividad registrada"
+                  : "actividades registradas"}
+              </span>
+            </div>
+            <div className="daily-ring">
+              <svg viewBox="0 0 100 100" aria-hidden="true">
+                <circle cx="50" cy="50" r="42" />
+                <circle
+                  className="ring-progress"
+                  cx="50"
+                  cy="50"
+                  r="42"
+                  strokeDasharray={`${goalProgress * 2.639} 263.9`}
+                  transform="rotate(-90 50 50)"
+                />
+              </svg>
+              <strong>
+                {Math.round(goalProgress)}
+                <small>%</small>
+              </strong>
+            </div>
+          </section>
+          <div className="quick-actions">
+            <Button onClick={() => navigate("study")}>
+              <Play size={18} />
+              {timer ? "Continuar sesión" : "Estudiar"}
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => start({ kind: "review" })}
+            >
+              <RotateCcw size={18} />
+              Registrar repaso
+            </Button>
+          </div>
+        </>
+      )}
       <div className="today-grid">
         <div className="stack">
-          <section className="panel agenda-panel">
-            <div className="section-title">
-              <h2>Repasar para recordar</h2>
-              <span className="badge">{reviews.length} pendiente(s)</span>
-            </div>
-            <p className="section-intro">
-              Ordenados por vencimiento, dificultad e importancia.
-            </p>
-            {reviews.length ? (
-              reviews.map((n) => {
-                const s = states.get(n.id)!;
-                return (
-                  <div className="task-row" key={n.id}>
-                    <span
-                      className={`activity-icon review ${s.due! < today ? "urgent" : ""}`}
-                    >
-                      <RotateCcw size={19} />
-                    </span>
-                    <div className="task-copy">
-                      <strong>{n.name}</strong>
-                      <small>
-                        {nodePath(n, data.nodes)
-                          .split(" / ")
-                          .slice(0, -1)
-                          .join(" / ") || "Bloque independiente"}
-                      </small>
-                      <span
-                        className={`task-status ${s.due! < today ? "overdue" : ""}`}
+          {b.length > 0 && (
+            <section className="panel agenda-panel">
+              <div className="section-title">
+                <h2>Repasos de hoy</h2>
+                {reviews.length > 0 && (
+                  <span className="badge">{reviews.length} pendientes</span>
+                )}
+              </div>
+              {reviews.length ? (
+                <>
+                  {reviews.slice(0, 5).map((n, i) => {
+                    const state = states.get(n.id)!,
+                      overdue = state.due! < today,
+                      previous = reviews[i - 1];
+                    return (
+                      <div key={n.id}>
+                        {(i === 0 ||
+                          (!!previous &&
+                            states.get(previous.id)!.due! < today !==
+                              overdue)) && (
+                          <div className="list-label">
+                            {overdue ? "Vencidos" : "Para hoy"}
+                          </div>
+                        )}
+                        <div className="task-row">
+                          <span
+                            className={`activity-icon review ${overdue ? "urgent" : ""}`}
+                          >
+                            <RotateCcw size={19} />
+                          </span>
+                          <div className="task-copy">
+                            <strong>{n.name}</strong>
+                            <small>
+                              {nodePath(n, data.nodes)
+                                .split(" / ")
+                                .slice(0, -1)
+                                .join(" / ") || "Bloque independiente"}
+                            </small>
+                            <span
+                              className={`task-status ${overdue ? "overdue" : ""}`}
+                            >
+                              {overdue
+                                ? `${daysBetween(state.due!, today)} ${daysBetween(state.due!, today) === 1 ? "día" : "días"} de retraso`
+                                : "Para hoy"}{" "}
+                              · {n.estimated_minutes} min
+                              {recommended.includes(n) && " · Recomendado"}
+                            </span>
+                          </div>
+                          <Button
+                            variant="secondary"
+                            onClick={() =>
+                              start({ kind: "review", nodeIds: [n.id] })
+                            }
+                          >
+                            Repasar
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div className="panel-foot">
+                    {budget} min recomendados según tu tiempo disponible.{" "}
+                    {reviews.length > 5 && (
+                      <button
+                        className="textbtn"
+                        onClick={() => navigate("reviews")}
                       >
-                        {s.due! < today ? "Vencido · " : "Hoy · "}
-                        {labelDay(s.due!)}
-                        {recommended.includes(n) && " · Recomendado"}
-                      </span>
-                    </div>
-                    <span className="duration">~{n.estimated_minutes} min</span>
-                    <Button
-                      variant="secondary"
-                      onClick={() => start({ kind: "review", nodeIds: [n.id] })}
-                    >
-                      Repasar
-                    </Button>
+                        Ver los {reviews.length} repasos
+                        <ArrowRight size={16} />
+                      </button>
+                    )}
                   </div>
-                );
-              })
-            ) : (
-              <Empty
-                title="Todo al día"
-                description={
-                  b.length
-                    ? "No hay repasos pendientes para hoy."
-                    : "Completa el estudio inicial de un bloque y se programará su primer repaso."
-                }
-              />
-            )}
-            <div className="panel-foot">
-              Recomendación: {budget} / {Math.round(reviewLimit)} min
-              recomendados según tu tiempo disponible. Todos los pendientes
-              siguen visibles.
-            </div>
-          </section>
-          <section className="panel">
-            <div className="section-title">
-              <h2>Estudio y práctica</h2>
-              <button className="textbtn" onClick={() => setEditing("new")}>
-                <Plus size={16} />
-                Añadir
-              </button>
-            </div>
-            {pending.length ? (
-              pending.map(taskCard)
-            ) : (
-              <Empty
-                title="Dale forma a tu día"
-                description="Planifica estudio nuevo, inglés, ortografía o cualquier otra práctica."
-                action={
-                  <Button variant="secondary" onClick={() => setEditing("new")}>
-                    Planificar actividad
-                  </Button>
-                }
-              />
-            )}{" "}
-            {completed.length > 0 && (
-              <>
-                <h3 className="subheading">Previstas y completadas</h3>
-                {completed.map(taskCard)}
-              </>
-            )}
-          </section>
+                </>
+              ) : (
+                <div className="quiet-empty">
+                  <Check size={20} />
+                  <div>
+                    <strong>Todo al día</strong>
+                    <p>
+                      {studied
+                        ? "No tienes repasos pendientes para hoy."
+                        : "Completa un bloque y su primer repaso aparecerá aquí."}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </section>
+          )}
+          {lastBlock && (
+            <section className="continue-card">
+              <div>
+                <span className="eyebrow">CONTINUAR ESTUDIANDO</span>
+                <h2>{lastBlock.name}</h2>
+                <p>
+                  {lastStudy &&
+                    labelDay(
+                      dayAt(lastStudy.started_at, preferences.timezone),
+                    )}{" "}
+                  ·{" "}
+                  {states.get(lastBlock.id)?.studied
+                    ? "Estudio inicial completado"
+                    : "En estudio"}
+                </p>
+              </div>
+              <Button variant="secondary" onClick={() => void continueStudy()}>
+                <Play size={17} />
+                Continuar
+              </Button>
+            </section>
+          )}
+          {(pending.length > 0 || b.length > 0) && (
+            <section className="panel">
+              <div className="section-title">
+                <h2>Tu plan</h2>
+                <button className="textbtn" onClick={() => setEditing("new")}>
+                  <Plus size={17} />
+                  Actividad
+                </button>
+              </div>
+              {pending.length ? (
+                pending.map(taskCard)
+              ) : (
+                <div className="quiet-empty">
+                  <CalendarDays size={22} />
+                  <p>
+                    Un día a tu medida. Añade estudio nuevo, inglés o una
+                    práctica.
+                  </p>
+                </div>
+              )}
+              {completed.length > 0 && (
+                <details className="completed-tasks">
+                  <summary>{completed.length} previstas y completadas</summary>
+                  {completed.map(taskCard)}
+                </details>
+              )}
+            </section>
+          )}
           {calendar && (
             <section className="panel">
               <div className="section-title">
@@ -437,6 +639,8 @@ export function Today({
                     <button
                       key={day}
                       className={day === today ? "current" : ""}
+                      aria-label={`${labelDay(day, { weekday: "long", day: "numeric", month: "long" })}: ${ts.length} actividades, ${rs.length} repasos`}
+                      aria-current={day === today ? "date" : undefined}
                       onClick={() => {
                         setSelected(day);
                         setView("day");
@@ -449,10 +653,18 @@ export function Today({
                           weekday: view === "month" ? undefined : "short",
                         })}
                       </strong>
-                      <small>{ts.length} actividad(es)</small>
+                      <small className="calendar-count">
+                        {ts.length} actividades
+                      </small>
                       {rs.length > 0 && (
-                        <span className="badge">{rs.length} repaso(s)</span>
+                        <span className="badge calendar-count">
+                          {rs.length} repasos
+                        </span>
                       )}
+                      <span className="calendar-dots" aria-hidden="true">
+                        {ts.length > 0 && <i className="planned" />}
+                        {rs.length > 0 && <i className="reviews" />}
+                      </span>
                     </button>
                   );
                 })}
@@ -509,71 +721,49 @@ export function Today({
           )}
         </div>
         <aside className="stack">
-          <section className="focus-card">
-            <span className="eyebrow">ENFOCA TU SIGUIENTE PASO</span>
-            <h2>
-              ¿Qué vas a<br />
-              trabajar ahora?
-            </h2>
-            <p>Elige los bloques. Registra el tiempo. Sigue tu avance.</p>
-            <Button onClick={() => navigate("study")}>
-              <BookOpen size={18} />
-              ESTUDIAR
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={() => start({ kind: "review" })}
-            >
-              <RotateCcw size={18} />
-              REPASAR
-            </Button>
-            {timer && (
-              <button className="textbtn" onClick={() => navigate("study")}>
-                Tienes una sesión abierta
-              </button>
-            )}
-          </section>
-          <section className="panel">
-            <div className="section-title">
-              <h3>Tu ritmo esta semana</h3>
-              <Clock size={17} />
-            </div>
-            <div className="week-bars">
-              {Array.from({ length: 7 }, (_, i) => addDays(today, i - 6)).map(
-                (day) => (
-                  <div
-                    key={day}
-                    title={`${labelDay(day)}: ${minutesLabel(week.byDay[day] ?? 0)}`}
-                  >
-                    <span
-                      style={{
-                        height: `${Math.min(100, ((week.byDay[day] ?? 0) / Math.max(60, preferences.dailyMinutes * 60)) * 100)}%`,
-                      }}
-                    />
-                    <small>{labelDay(day, { weekday: "narrow" })}</small>
-                  </div>
-                ),
-              )}
-            </div>
-            <strong className="week-total">{minutesLabel(week.total)}</strong>
-            <p className="muted">Tiempo registrado en los últimos 7 días.</p>
-            <ProgressBar
-              value={
-                preferences.weeklyMinutes
-                  ? (week.total / (preferences.weeklyMinutes * 60)) * 100
-                  : 0
-              }
-            />
-            <small className="muted">
-              Objetivo semanal: {preferences.weeklyMinutes} min
-            </small>
-          </section>
-          <section className="panel">
-            <h3>Lo que ya has hecho hoy</h3>
-            {stats.sessions.length ? (
+          {week.sessions.length > 0 && (
+            <section className="panel weekly-panel">
+              <div className="section-title">
+                <h3>Tu ritmo semanal</h3>
+                <strong>{minutesLabel(week.total)}</strong>
+              </div>
+              <div
+                className="week-bars"
+                role="img"
+                aria-label={`Últimos siete días: ${minutesLabel(week.total)}. ${Array.from(
+                  { length: 7 },
+                  (_, i) => {
+                    const d = addDays(today, i - 6);
+                    return `${labelDay(d)}: ${minutesLabel(week.byDay[d] ?? 0)}`;
+                  },
+                ).join(". ")}`}
+              >
+                {Array.from({ length: 7 }, (_, i) => addDays(today, i - 6)).map(
+                  (day) => (
+                    <div key={day} className={day === today ? "current" : ""}>
+                      <div className="week-track">
+                        <span
+                          style={{
+                            height: `${Math.min(100, ((week.byDay[day] ?? 0) / Math.max(60, preferences.dailyMinutes * 60)) * 100)}%`,
+                          }}
+                        />
+                      </div>
+                      <small>{labelDay(day, { weekday: "narrow" })}</small>
+                    </div>
+                  ),
+                )}
+              </div>
+              <small className="muted">
+                Objetivo semanal: {preferences.weeklyMinutes} min
+              </small>
+            </section>
+          )}
+          {stats.sessions.length > 0 && (
+            <section className="panel">
+              <h3>Lo que ya has hecho hoy</h3>
               <div className="recent-sessions">
-                {stats.sessions.map((s) => (
-                  <div key={s.id}>
+                {stats.sessions.map((session) => (
+                  <div key={session.id}>
                     <Check size={16} />
                     <span>
                       {
@@ -581,19 +771,51 @@ export function Today({
                           study: "Estudio",
                           review: "Repaso",
                           practice: "Práctica",
-                        }[s.kind]
+                        }[session.kind]
                       }
+                      <small>{sessionContents(session.id)}</small>
                     </span>
-                    <strong>{minutesLabel(s.duration_seconds)}</strong>
+                    <strong>{minutesLabel(session.duration_seconds)}</strong>
                   </div>
                 ))}
               </div>
-            ) : (
-              <p className="muted">
-                Tu primera sesión aparecerá aquí cuando la guardes.
+            </section>
+          )}
+          {yesterday.length > 0 && (
+            <section className="panel">
+              <h3>Ayer avanzaste</h3>
+              <p className="help">
+                {minutesLabel(
+                  yesterday.reduce((total, s) => total + s.duration_seconds, 0),
+                )}{" "}
+                · {yesterday.length}{" "}
+                {yesterday.length === 1 ? "actividad" : "actividades"}
               </p>
-            )}
-          </section>
+              <div className="recent-sessions">
+                {yesterday.slice(0, 3).map((session) => (
+                  <div key={session.id}>
+                    <span>{sessionContents(session.id)}</span>
+                    <strong>{minutesLabel(session.duration_seconds)}</strong>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+          {recent.length > 0 && (
+            <button
+              className="progress-link"
+              onClick={() => navigate("progress")}
+            >
+              <ArrowUpRight size={24} />
+              <span>
+                <strong>
+                  {studied}/{b.length} bloques estudiados
+                </strong>
+                <small>Consulta tus vueltas y tu progreso</small>
+              </span>
+              <ArrowRight size={18} />
+            </button>
+          )}
         </aside>
       </div>
       <Modal
