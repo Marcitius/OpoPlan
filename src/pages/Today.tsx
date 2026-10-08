@@ -1,32 +1,25 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
-  Plus,
-  Play,
-  Check,
+  ArrowRight,
   BookOpen,
-  RotateCcw,
   CalendarDays,
+  Check,
   ChevronLeft,
   ChevronRight,
-  Clock,
   ClipboardCheck,
-  ArrowUpRight,
-  ChevronRight as ArrowRight,
-  Sparkles,
+  Download,
+  Play,
+  Plus,
+  RotateCcw,
 } from "lucide-react";
 import { useApp } from "../data/context";
 import type { SessionOptions } from "../components/SessionForm";
-import {
-  Button,
-  Stat,
-  ProgressBar,
-  Empty,
-  Modal,
-  Menu,
-} from "../components/ui";
+import { Button, Menu, Modal } from "../components/ui";
 import { PlanForm } from "../components/PlanForm";
 import { BulkPlanForm } from "../components/BulkPlanForm";
 import { comparePlanTasks, planMinutes } from "../core/planner";
+import { dayPlanSummary, weekStartISO } from "../core/todayOverview";
+import { scopeBlockIds } from "../core/planScope";
 import { active } from "../core/types";
 import type { PlanTask } from "../core/types";
 import {
@@ -38,99 +31,88 @@ import {
   minutesLabel,
   daysBetween,
 } from "../core/dates";
-import { blocks, getStates, statistics, nodePath } from "../core/stats";
+import { blocks, getStates, statistics } from "../core/stats";
 import { priority } from "../core/memory";
 import { calendarICS, download } from "../core/import";
 import type { Route } from "../App";
+
 export function Today({
   start,
   navigate,
   initialCalendar = false,
 }: {
-  start: (o: SessionOptions) => void;
-  navigate: (r: Route) => void;
+  start: (options: SessionOptions) => void;
+  navigate: (route: Route) => void;
   initialCalendar?: boolean;
 }) {
-  const {
-      owner,
-      data,
-      preferences,
-      oppositionId,
-      save,
-      timer,
-      setTimer,
-      notify,
-    } = useApp(),
-    today = dayAt(new Date(), preferences.timezone),
-    opposition = data.oppositions.find((o) => o.id === oppositionId),
-    b = blocks(data, oppositionId),
-    states = getStates(data),
-    stats = statistics(data, oppositionId, preferences.timezone, today, today),
-    week = statistics(
-      data,
-      oppositionId,
-      preferences.timezone,
-      addDays(today, -6),
-      today,
-    );
-  const reviews = b
-    .filter((n) => {
-      const s = states.get(n.id)!;
-      return s.enabled && s.due && s.due <= today;
+  const { owner, data, preferences, oppositionId, save, timer, setTimer, notify } = useApp();
+  const today = dayAt(new Date(), preferences.timezone);
+  const tomorrow = addDays(today, 1);
+  const opposition = data.oppositions.find(o => o.id === oppositionId);
+  const studyBlocks = blocks(data, oppositionId);
+  const states = getStates(data);
+  const stats = statistics(data, oppositionId, preferences.timezone, today, today);
+  const week = statistics(data, oppositionId, preferences.timezone, addDays(today, -6), today);
+  const tasks = active(data.plan_tasks)
+    .filter(t => t.opposition_id === oppositionId && t.status !== "cancelled")
+    .sort(comparePlanTasks);
+  const todaySummary = dayPlanSummary(tasks, today);
+  const tomorrowSummary = dayPlanSummary(tasks, tomorrow);
+  const todayTasks = todaySummary.activities;
+  const tomorrowTasks = tomorrowSummary.activities;
+  const pendingToday = todaySummary.pending;
+  const completedToday = todaySummary.completed;
+  const overdueTasks = tasks.filter(t => t.status === "pending" && t.scheduled_day < today);
+  const plannedReviewToday = new Set(todayTasks
+    .filter(t => t.kind === "review" && t.status === "pending")
+    .flatMap(t => scopeBlockIds(t.node_id, data.nodes, studyBlocks)));
+  const plannedMinutes = todaySummary.plannedMinutes;
+  const tomorrowMinutes = tomorrowSummary.plannedMinutes;
+  const studied = studyBlocks.filter(n => states.get(n.id)?.studied).length;
+  const dueReviews = studyBlocks
+    .filter(n => {
+      const state = states.get(n.id);
+      return state?.enabled && state.due && state.due <= today;
     })
-    .sort(
-      (a, c) =>
-        priority(
-          states.get(c.id)!,
-          today,
-          c.importance,
-          opposition?.exam_date ?? null,
-        ) -
-        priority(
-          states.get(a.id)!,
-          today,
-          a.importance,
-          opposition?.exam_date ?? null,
-        ),
+    .sort((a, b) =>
+      priority(states.get(b.id)!, today, b.importance, opposition?.exam_date ?? null) -
+      priority(states.get(a.id)!, today, a.importance, opposition?.exam_date ?? null)
     );
-  const isStudyDay = preferences.studyDays.includes(
-      new Date(today + "T12:00:00Z").getUTCDay(),
-    ),
-    dailyTarget = isStudyDay ? preferences.dailyMinutes : 0,
-    reviewLimit = Math.min(
-      preferences.reviewMinutes,
-      Math.max(0, dailyTarget - stats.total / 60),
-    );
-  let budget = 0;
-  const recommended = reviews.filter((n) => {
-    if (budget + n.estimated_minutes <= reviewLimit) {
-      budget += n.estimated_minutes;
-      return true;
-    }
-    return false;
-  });
-  const tasks = active(data.plan_tasks).filter(
-      (t) => t.opposition_id === oppositionId,
-    ).sort(comparePlanTasks),
-    pending = tasks.filter(
-      (t) => t.status === "pending" && t.scheduled_day <= today,
-    ),
-    completed = tasks.filter(
-      (t) => t.status === "completed" && t.scheduled_day === today,
-    );
-  const [editing, setEditing] = useState<PlanTask | "new" | null>(null),
-    [bulkOpen, setBulkOpen] = useState(false),
-    [calendar, setCalendar] = useState(initialCalendar),
-    [view, setView] = useState<"day" | "week" | "month">("week"),
-    [selected, setSelected] = useState(today);
-  const studied = b.filter((n) => states.get(n.id)?.studied).length;
+  const unplannedDueReviews = dueReviews.filter(n => !plannedReviewToday.has(n.id));
+  const isStudyDay = preferences.studyDays.includes(new Date(today + "T12:00:00Z").getUTCDay());
+  const dailyTarget = isStudyDay ? preferences.dailyMinutes : 0;
+  const percent = dailyTarget ? Math.min(100, Math.round(stats.total / (dailyTarget * 60) * 100)) : 0;
+  const recent = active(data.sessions)
+    .filter(s => s.opposition_id === oppositionId)
+    .sort((a, b) => b.started_at.localeCompare(a.started_at));
+  const noSetup = !studyBlocks.length && !tasks.length && !recent.length;
+
+  const [selected, setSelected] = useState(today);
+  const [calendarMode, setCalendarMode] = useState<"week" | "month">("week");
+  const [editing, setEditing] = useState<PlanTask | "new" | null>(null);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const agendaRef = useRef<HTMLElement>(null);
+
+  function openPlanner(date: string) {
+    setSelected(date);
+    setBulkOpen(true);
+  }
+  function showAgenda(date = today) {
+    setSelected(date);
+    // Allow React to update before scrolling. The calendar already exists in the DOM.
+    agendaRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  function taskIds(t: PlanTask): string[] {
+    return scopeBlockIds(t.node_id, data.nodes, studyBlocks);
+  }
   async function beginTask(t: PlanTask) {
     if (timer) {
       notify("Ya tienes una sesión abierta.");
       navigate("study");
       return;
     }
-    if (t.kind !== "practice" && !t.node_id) {
+    const ids = taskIds(t);
+    if (t.kind !== "practice" && !ids.length) {
       start({ kind: t.kind, taskId: t.id });
       return;
     }
@@ -139,7 +121,7 @@ export function Today({
       owner_id: owner,
       oppositionId,
       kind: t.kind,
-      nodeIds: t.node_id ? [t.node_id] : [],
+      nodeIds: ids,
       taskId: t.id,
       startedAt: new Date().toISOString(),
       runningSince: Date.now(),
@@ -152,69 +134,38 @@ export function Today({
     });
     navigate("study");
   }
-  const taskCard = (t: PlanTask) => (
-    <div className="task-row" key={t.id}>
-      <span className={`activity-icon ${t.kind}`}>
-        {t.status === "completed" ? (
-          <Check size={19} />
-        ) : t.kind === "study" ? (
-          <BookOpen size={19} />
-        ) : t.kind === "review" ? (
-          <RotateCcw size={19} />
-        ) : (
-          <ClipboardCheck size={19} />
-        )}
-      </span>
-      <div className="task-copy">
-        <strong>{t.name}</strong>
-        <small>
-          {t.node_id
-            ? nodePath(data.nodes.find((n) => n.id === t.node_id)!, data.nodes)
-            : t.category_id
-              ? data.categories.find((c) => c.id === t.category_id)?.name
-              : {
-                  study: "Estudio nuevo",
-                  review: "Repaso",
-                  practice: "Práctica",
-                }[t.kind]}
+  function taskRow(t: PlanTask) {
+    const icon = t.kind === "study" ? <BookOpen size={18} /> : t.kind === "review" ? <RotateCcw size={18} /> : <ClipboardCheck size={18} />;
+    return (
+      <div className={`home-task ${t.status === "completed" ? "is-completed" : ""}`} key={t.id}>
+        <span className={`home-task-icon ${t.kind}`}>{t.status === "completed" ? <Check size={18} /> : icon}</span>
+        <div className="home-task-content">
+          <strong>{t.name}</strong>
+          <small>
+            {t.scheduled_time ? `${t.scheduled_time.slice(0, 5)} · ` : ""}
+            {t.estimated_minutes} min · {t.kind === "study" ? "Estudio" : t.kind === "review" ? "Repaso" : "Práctica"}
+          </small>
+          {t.notes.trim() && <small className="home-task-note">{t.notes}</small>}
           {t.scheduled_day < today && t.status === "pending" && (
-            <span className="overdue">
-              {" "}
-              · Pendiente desde {labelDay(t.scheduled_day)}
-            </span>
+            <small className="home-task-overdue">Pendiente desde {labelDay(t.scheduled_day)}</small>
           )}
-        </small>
-        {t.notes.trim() && <small className="planned-note">{t.notes}</small>}
-      </div>
-      <span className="duration">{t.scheduled_time ? `${t.scheduled_time.slice(0, 5)} · ` : ""}{t.estimated_minutes} min</span>
-      {t.status === "pending" && (
-        <Button variant="secondary" onClick={() => void beginTask(t)}>
-          <Play size={15} />
-          <span>Iniciar</span>
-        </Button>
-      )}
-      <Menu
-        items={[
-          { label: "Editar / cambiar fecha", action: () => setEditing(t) },
-          ...(t.status === "pending"
-            ? [
+        </div>
+        <div className="home-task-actions">
+          {t.status === "pending" && (
+            <Button variant="secondary" onClick={() => void beginTask(t)}><Play size={15} /> Iniciar</Button>
+          )}
+          <Menu
+            label={`Opciones de ${t.name}`}
+            items={[
+              { label: "Editar / cambiar fecha", action: () => { setSelected(t.scheduled_day); setEditing(t); } },
+              ...(t.status === "pending" ? [
                 {
                   label: "Registrar realizada",
-                  action: () =>
-                    start({
-                      kind: t.kind,
-                      nodeIds: t.node_id ? [t.node_id] : [],
-                      taskId: t.id,
-                      test: t.kind === "practice",
-                    }),
+                  action: () => start({ kind: t.kind, nodeIds: taskIds(t), taskId: t.id, test: t.kind === "practice" }),
                 },
                 {
                   label: "Posponer a mañana",
-                  action: () =>
-                    void save("plan_tasks", {
-                      ...t,
-                      scheduled_day: addDays(today, 1),
-                    }),
+                  action: () => void save("plan_tasks", { ...t, scheduled_day: tomorrow }),
                 },
                 {
                   label: "Cancelar actividad",
@@ -224,622 +175,189 @@ export function Today({
                   },
                   danger: true,
                 },
-              ]
-            : []),
-        ]}
-      />
-    </div>
-  );
-  const span = view === "day" ? 1 : view === "week" ? 7 : 42;
-  const calendarStart = view === "month" ? monthGridStart(selected) : selected;
-  const recent = active(data.sessions)
-    .filter((s) => s.opposition_id === oppositionId)
-    .sort((a, b) => b.started_at.localeCompare(a.started_at));
-  const lastStudy = recent.find(
-    (s) =>
-      s.kind === "study" &&
-      active(data.session_blocks).some(
-        (a) => a.session_id === s.id && b.some((n) => n.id === a.node_id),
-      ),
-  );
-  const lastBlock = lastStudy
-    ? b.find((n) =>
-        active(data.session_blocks).some(
-          (a) => a.session_id === lastStudy.id && a.node_id === n.id,
-        ),
-      )
-    : undefined;
-  const yesterday = recent.filter(
-    (s) => dayAt(s.started_at, preferences.timezone) === addDays(today, -1),
-  );
-  function sessionContents(id: string) {
-    const content = active(data.session_blocks)
-      .filter((a) => a.session_id === id)
-      .map((a) => data.nodes.find((n) => n.id === a.node_id)?.name)
-      .filter(Boolean)
-      .join(" · ");
-    const result = active(data.test_results).find((t) => t.session_id === id);
-    return content || result?.name || "Práctica";
+              ] : []),
+            ]}
+          />
+        </div>
+      </div>
+    );
   }
-  const displayName = data.profiles
-    .find((p) => p.id === owner)
-    ?.display_name.trim()
-    .split(" ")[0];
-  const hour = Number(
-    new Intl.DateTimeFormat("es", {
-      timeZone: preferences.timezone,
-      hour: "numeric",
-      hourCycle: "h23",
-    }).format(new Date()),
-  );
-  const greeting =
-    hour < 12 ? "Buenos días" : hour < 20 ? "Buenas tardes" : "Buenas noches";
-  const goalProgress = dailyTarget
-    ? Math.min(100, (stats.total / (dailyTarget * 60)) * 100)
-    : 0;
-  async function continueStudy() {
-    if (timer || !lastBlock) {
-      navigate("study");
-      return;
-    }
-    await setTimer({
-      id: crypto.randomUUID(),
-      owner_id: owner,
-      oppositionId,
-      kind: "study",
-      nodeIds: [lastBlock.id],
-      taskId: null,
-      startedAt: new Date().toISOString(),
-      runningSince: Date.now(),
-      accumulated: 0,
-      mode: "continuous",
-      phase: "work",
-      phaseAccumulated: 0,
-      workSeconds: preferences.pomodoroWork * 60,
-      breakSeconds: preferences.pomodoroBreak * 60,
-    });
-    navigate("study");
+  function exportCalendar() {
+    download(
+      "OpoPlan-agenda.ics",
+      calendarICS([
+        ...tasks.filter(t => t.status === "pending").map(t => ({
+          id: t.id,
+          name: t.name,
+          day: t.scheduled_day,
+          time: t.scheduled_time,
+          minutes: t.estimated_minutes,
+          notes: t.notes,
+        })),
+        ...studyBlocks
+          .filter(n => states.get(n.id)?.enabled && states.get(n.id)?.due)
+          .map(n => ({
+            id: n.id,
+            name: "Repaso · " + n.name,
+            day: states.get(n.id)!.due!,
+            minutes: n.estimated_minutes,
+            notes: states.get(n.id)!.reason,
+          })),
+      ]),
+      "text/calendar",
+    );
   }
+
+  // A weekly calendar must start on the Monday of the selected week,
+  // not the Monday of the selected month.
+  const selectedWeekStart = weekStartISO(selected);
+  const dateCells = calendarMode === "month"
+    ? Array.from({ length: 42 }, (_, i) => addDays(monthGridStart(selected), i))
+    : Array.from({ length: 7 }, (_, i) => addDays(selectedWeekStart, i));
+  const selectedTasks = tasks.filter(t => t.scheduled_day === selected);
+  const selectedMonth = labelDay(selected, { month: "long", year: "numeric" });
+  const plannedReviewIds = new Set(selectedTasks.filter(t => t.kind === "review" && t.node_id).flatMap(t => taskIds(t)));
+  const unplannedReviews = studyBlocks.filter(n => states.get(n.id)?.enabled && states.get(n.id)?.due === selected && !plannedReviewIds.has(n.id));
+
+  const agenda = (
+    <section className="panel home-agenda" ref={agendaRef} aria-label="Agenda de estudio">
+      <div className="home-section-header">
+        <div><h2>Agenda</h2><p>Elige un día y consulta lo que has previsto.</p></div>
+        <div className="home-segmented" aria-label="Vista del calendario">
+          <button aria-pressed={calendarMode === "week"} className={calendarMode === "week" ? "selected" : ""} onClick={() => setCalendarMode("week")}>Semana</button>
+          <button aria-pressed={calendarMode === "month"} className={calendarMode === "month" ? "selected" : ""} onClick={() => setCalendarMode("month")}>Mes</button>
+        </div>
+      </div>
+      <div className="home-agenda-controls">
+        <button className="iconbtn" aria-label="Periodo anterior" onClick={() => setSelected(calendarMode === "month" ? addMonths(selected, -1) : addDays(selected, -7))}><ChevronLeft size={19}/></button>
+        <label className="home-agenda-date"><span>{selectedMonth}</span><input type="date" aria-label="Elegir fecha de agenda" value={selected} onChange={e => e.target.value && setSelected(e.target.value)} /></label>
+        <button className="iconbtn" aria-label="Periodo siguiente" onClick={() => setSelected(calendarMode === "month" ? addMonths(selected, 1) : addDays(selected, 7))}><ChevronRight size={19}/></button>
+        <button className="home-today-link" onClick={() => setSelected(today)}>Hoy</button>
+      </div>
+      <div className={`home-calendar ${calendarMode}`}>
+        {dateCells.map(day => {
+          const count = tasks.filter(t => t.scheduled_day === day).length;
+          const scheduled = studyBlocks.some(n => states.get(n.id)?.enabled && states.get(n.id)?.due === day);
+          return <button
+            type="button" key={day}
+            aria-label={`${labelDay(day, { weekday: "long", day: "numeric", month: "long" })}: ${count} actividades${scheduled ? ", repasos automáticos" : ""}`}
+            aria-pressed={day === selected}
+            aria-current={day === today ? "date" : undefined}
+            className={`${day === selected ? "selected" : ""} ${day === today ? "current" : ""} ${calendarMode === "month" && day.slice(0,7) !== selected.slice(0,7) ? "outside" : ""}`}
+            onClick={() => setSelected(day)}>
+            <span className="home-calendar-weekday">{labelDay(day, { weekday: "short" }).replace(".", "")}</span>
+            <strong>{Number(day.slice(-2))}</strong>
+            <span className="home-calendar-dots" aria-hidden="true">
+              {count > 0 && <i className="planned"/>}{scheduled && <i className="review"/>}
+            </span>
+          </button>;
+        })}
+      </div>
+      <div className="home-agenda-day">
+        <div className="home-section-header">
+          <div>
+            <h3>{labelDay(selected, { weekday: "long", day: "numeric", month: "long" })}</h3>
+            <p>{selectedTasks.length} {selectedTasks.length === 1 ? "actividad" : "actividades"} · {planMinutes(selectedTasks)} min previstos{unplannedReviews.length ? ` · ${unplannedReviews.length} repasos sugeridos` : ""}</p>
+          </div>
+          <Button variant="secondary" onClick={() => openPlanner(selected)}><Plus size={16}/> Planificar</Button>
+        </div>
+        {selectedTasks.length ? selectedTasks.map(taskRow) : (
+          <p className="home-inline-empty">Sin actividades planificadas para este día.</p>
+        )}
+        {unplannedReviews.length > 0 && (
+          <div className="home-auto-reviews">
+            <strong>{unplannedReviews.length} {unplannedReviews.length === 1 ? "repaso automático" : "repasos automáticos"} para esta fecha</strong>
+            <p>Los repasos sugeridos no son actividades planificadas. Se registran cuando los realices.</p>
+            {unplannedReviews.slice(0, 3).map(n => <div className="home-auto-review" key={n.id}><span>{n.name}</span><Button variant="ghost" onClick={() => start({ kind: "review", nodeIds: [n.id] })}>Repasar</Button></div>)}
+            {unplannedReviews.length > 3 && <button className="textbtn" onClick={() => navigate("reviews")}>Ver todos los repasos <ArrowRight size={16}/></button>}
+          </div>
+        )}
+        <div className="home-agenda-bottom">
+          <button className="textbtn" onClick={() => { setEditing("new"); }}>Añadir una actividad <Plus size={15}/></button>
+          <button className="textbtn" onClick={exportCalendar}><Download size={15}/> Exportar .ics</button>
+        </div>
+      </div>
+    </section>
+  );
+
   return (
     <>
-      <div className="page-heading today-heading">
+      <div className="page-heading home-heading">
         <div>
-          <div className="eyebrow">
-            {labelDay(today, {
-              weekday: "long",
-              day: "numeric",
-              month: "long",
-            })}
-          </div>
-          <h1>
-            {greeting}
-            {displayName ? `, ${displayName}` : ""}.
-          </h1>
-          <p>
-            {opposition?.name} ·{" "}
-            {isStudyDay
-              ? "Un paso más, bloque a bloque."
-              : "Hoy puedes descansar. Tu plan sigue aquí."}
-          </p>
+          <div className="eyebrow">{labelDay(today, { weekday: "long", day: "numeric", month: "long" })}</div>
+          <h1>{initialCalendar ? "Organiza tus días." : "Tu jornada."}</h1>
+          <p>{opposition?.name ?? "Tu preparación"}{!initialCalendar && (isStudyDay ? " · Lo importante, a la vista." : " · Hoy es día de descanso.")}</p>
         </div>
-        <div className="heading-actions">
-          <Button variant="secondary" onClick={() => setCalendar((v) => !v)}>
-            <CalendarDays size={18} />
-            Agenda
-          </Button>
-          <Button variant="secondary" onClick={() => { setSelected(addDays(today, 1)); setBulkOpen(true); }}>
-            <Plus size={18} />
-            Planificar mañana
-          </Button>
+        <div className="home-heading-actions">
+          {initialCalendar ? (
+            <Button onClick={() => openPlanner(selected)}><Plus size={17}/> Planificar día</Button>
+          ) : (
+            <>
+              <Button variant="secondary" onClick={() => showAgenda()}><CalendarDays size={17}/> Agenda</Button>
+              <Button onClick={() => openPlanner(tomorrow)}><Plus size={17}/> Planificar mañana</Button>
+            </>
+          )}
         </div>
       </div>
-      {!recent.length && (
-        <section className="getting-started">
-          <span className="activity-icon">
-            <Sparkles size={22} />
-          </span>
-          <div>
-            <h2>Tu preparación empieza aquí.</h2>
-            <p>
-              {!data.nodes.some(
-                (n) => n.opposition_id === oppositionId && !n.deleted_at,
-              )
-                ? "Añade tu temario. Divídelo en bloques pequeños y registra lo que estudias de verdad."
-                : !b.length
-                  ? "Ya tienes la estructura. Entra en una materia y añade un bloque revisable para empezar."
-                  : "Tu temario está listo. Registra tu primer bloque; cuando lo completes, programaremos su repaso."}
-            </p>
-            <div className="onboarding-steps">
-              <span className="selected">✓ Tu plan</span>
-              <span className={b.length ? "selected" : ""}>
-                {b.length ? "✓" : "2"} Temario
-              </span>
-              <span>3 Primera sesión</span>
+      {initialCalendar ? agenda : (
+        <div className="home-dashboard">
+          {noSetup && (
+            <section className="home-onboarding">
+              <BookOpen size={22}/>
+              <div><h2>Prepara tu primer bloque de estudio</h2><p>Importa o crea tu temario para empezar a registrar sesiones y programar repasos.</p></div>
+              <Button onClick={() => navigate("syllabus")}>Ir al temario <ArrowRight size={16}/></Button>
+            </section>
+          )}
+          <section className="home-summary" aria-label="Resumen de hoy">
+            <div className="home-summary-lead"><span>Hoy llevas</span><strong>{minutesLabel(stats.total)}</strong><small>{dailyTarget ? `de ${dailyTarget} min de objetivo` : "Sin objetivo para hoy"}</small></div>
+            <div className="home-summary-metrics">
+              <div><strong>{completedToday.length}/{todayTasks.length}</strong><small>Actividades completadas</small></div>
+              <div><strong>{plannedMinutes} min</strong><small>Tiempo previsto</small></div>
+              <div><strong>{dueReviews.length}</strong><small>Repasos pendientes</small></div>
             </div>
-            <div className="heading-actions">
-              <Button onClick={() => navigate(b.length ? "study" : "syllabus")}>
-                {b.length ? "Empezar a estudiar" : "Preparar mi temario"}
-                <ArrowRight size={17} />
-              </Button>
-              {b.length > 0 ? (
-                <Button
-                  variant="ghost"
-                  onClick={() => start({ kind: "study" })}
-                >
-                  Registrar estudio anterior
-                </Button>
-              ) : (
-                <Button
-                  variant="ghost"
-                  onClick={() => start({ kind: "practice", test: true })}
-                >
-                  Registrar una práctica
-                </Button>
-              )}
-            </div>
-          </div>
-        </section>
-      )}
-      {(b.length > 0 || recent.length > 0) && (
-        <>
-          <section className="daily-card" aria-label="Progreso diario">
-            <div>
-              <span className="daily-label">Tu tiempo de hoy</span>
-              <strong className="daily-time">
-                {minutesLabel(stats.total)}
-              </strong>
-              <p>
-                {dailyTarget
-                  ? `de ${dailyTarget} min de objetivo`
-                  : "Día sin objetivo de tiempo"}
-              </p>
-              <span className="daily-completed">
-                <Check size={15} />
-                {stats.sessions.length}{" "}
-                {stats.sessions.length === 1
-                  ? "actividad registrada"
-                  : "actividades registradas"}
-              </span>
-            </div>
-            <div className="daily-ring">
-              <svg viewBox="0 0 100 100" aria-hidden="true">
-                <circle cx="50" cy="50" r="42" />
-                <circle
-                  className="ring-progress"
-                  cx="50"
-                  cy="50"
-                  r="42"
-                  strokeDasharray={`${goalProgress * 2.639} 263.9`}
-                  transform="rotate(-90 50 50)"
-                />
-              </svg>
-              <strong>
-                {Math.round(goalProgress)}
-                <small>%</small>
-              </strong>
-            </div>
+            <div className="home-summary-progress" role="progressbar" aria-label="Objetivo diario de estudio" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${percent}%` }}/></div>
           </section>
-          <div className="quick-actions">
-            <Button onClick={() => navigate("study")}>
-              <Play size={18} />
-              {timer ? "Continuar sesión" : "Estudiar"}
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={() => start({ kind: "review" })}
-            >
-              <RotateCcw size={18} />
-              Registrar repaso
-            </Button>
+          <div className="home-quick-actions">
+            <Button onClick={() => navigate("study")}><Play size={17}/> {timer ? "Continuar sesión" : "Empezar a estudiar"}</Button>
+            <Button variant="secondary" onClick={() => start({ kind: "review" })}><RotateCcw size={17}/> Registrar repaso</Button>
           </div>
-        </>
-      )}
-      <div className="today-grid">
-        <div className="stack">
-          {b.length > 0 && (
-            <section className="panel agenda-panel">
-              <div className="section-title">
-                <h2>Repasos de hoy</h2>
-                {reviews.length > 0 && (
-                  <span className="badge">{reviews.length} pendientes</span>
+          <div className="home-main-grid">
+            <div className="home-primary-stack">
+              <section className="panel home-panel">
+                <div className="home-section-header"><div><h2>Tu plan de hoy</h2><p>{pendingToday.length ? `${pendingToday.length} pendientes · ${completedToday.length} completadas` : completedToday.length ? "Has completado todas las actividades previstas." : "Organiza qué quieres hacer hoy."}</p></div><button className="textbtn" onClick={() => openPlanner(today)}><Plus size={17}/> Añadir</button></div>
+                {pendingToday.length ? pendingToday.map(taskRow) : (
+                  <div className="home-inline-empty">{todayTasks.length ? "No te quedan actividades planificadas pendientes." : "Todavía no has programado actividades para hoy."}</div>
                 )}
-              </div>
-              {reviews.length ? (
-                <>
-                  {reviews.slice(0, 5).map((n, i) => {
-                    const state = states.get(n.id)!,
-                      overdue = state.due! < today,
-                      previous = reviews[i - 1];
-                    return (
-                      <div key={n.id}>
-                        {(i === 0 ||
-                          (!!previous &&
-                            states.get(previous.id)!.due! < today !==
-                              overdue)) && (
-                          <div className="list-label">
-                            {overdue ? "Vencidos" : "Para hoy"}
-                          </div>
-                        )}
-                        <div className="task-row">
-                          <span
-                            className={`activity-icon review ${overdue ? "urgent" : ""}`}
-                          >
-                            <RotateCcw size={19} />
-                          </span>
-                          <div className="task-copy">
-                            <strong>{n.name}</strong>
-                            <small>
-                              {nodePath(n, data.nodes)
-                                .split(" / ")
-                                .slice(0, -1)
-                                .join(" / ") || "Bloque independiente"}
-                            </small>
-                            <span
-                              className={`task-status ${overdue ? "overdue" : ""}`}
-                            >
-                              {overdue
-                                ? `${daysBetween(state.due!, today)} ${daysBetween(state.due!, today) === 1 ? "día" : "días"} de retraso`
-                                : "Para hoy"}{" "}
-                              · {n.estimated_minutes} min
-                              {recommended.includes(n) && " · Recomendado"}
-                            </span>
-                          </div>
-                          <Button
-                            variant="secondary"
-                            onClick={() =>
-                              start({ kind: "review", nodeIds: [n.id] })
-                            }
-                          >
-                            Repasar
-                          </Button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                  <div className="panel-foot">
-                    {budget} min recomendados según tu tiempo disponible.{" "}
-                    {reviews.length > 5 && (
-                      <button
-                        className="textbtn"
-                        onClick={() => navigate("reviews")}
-                      >
-                        Ver los {reviews.length} repasos
-                        <ArrowRight size={16} />
-                      </button>
-                    )}
-                  </div>
-                </>
-              ) : (
-                <div className="quiet-empty">
-                  <Check size={20} />
-                  <div>
-                    <strong>Todo al día</strong>
-                    <p>
-                      {studied
-                        ? "No tienes repasos pendientes para hoy."
-                        : "Completa un bloque y su primer repaso aparecerá aquí."}
-                    </p>
-                  </div>
-                </div>
-              )}
-            </section>
-          )}
-          {lastBlock && (
-            <section className="continue-card">
-              <div>
-                <span className="eyebrow">CONTINUAR ESTUDIANDO</span>
-                <h2>{lastBlock.name}</h2>
-                <p>
-                  {lastStudy &&
-                    labelDay(
-                      dayAt(lastStudy.started_at, preferences.timezone),
-                    )}{" "}
-                  ·{" "}
-                  {states.get(lastBlock.id)?.studied
-                    ? "Estudio inicial completado"
-                    : "En estudio"}
-                </p>
-              </div>
-              <Button variant="secondary" onClick={() => void continueStudy()}>
-                <Play size={17} />
-                Continuar
-              </Button>
-            </section>
-          )}
-          {(pending.length > 0 || b.length > 0) && (
-            <section className="panel">
-              <div className="section-title">
-                <h2>Tu plan</h2>
-                <div className="heading-actions">
-                  <button className="textbtn" onClick={() => setEditing("new")}><Plus size={17}/> Una actividad</button>
-                  <button className="textbtn" onClick={() => {setSelected(today);setBulkOpen(true);}}><CalendarDays size={17}/> Planificar día</button>
-                </div>
-              </div>
-              {pending.length ? (
-                pending.map(taskCard)
-              ) : (
-                <div className="quiet-empty">
-                  <CalendarDays size={22} />
-                  <p>
-                    Un día a tu medida. Añade estudio nuevo, inglés o una
-                    práctica.
-                  </p>
-                </div>
-              )}
-              {completed.length > 0 && (
-                <details className="completed-tasks">
-                  <summary>{completed.length} previstas y completadas</summary>
-                  {completed.map(taskCard)}
-                </details>
-              )}
-            </section>
-          )}
-          {calendar && (
-            <section className="panel">
-              <div className="section-title">
-                <h2>Tu agenda</h2>
-                <div className="segmented compact">
-                  {(["day", "week", "month"] as const).map((v) => (
-                    <button
-                      key={v}
-                      className={view === v ? "selected" : ""}
-                      onClick={() => setView(v)}
-                    >
-                      {{ day: "Día", week: "Semana", month: "Mes" }[v]}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="calendar-controls">
-                <button
-                  className="iconbtn"
-                  aria-label="Periodo anterior"
-                  onClick={() =>
-                    setSelected(
-                      view === "month"
-                        ? addMonths(selected, -1)
-                        : addDays(selected, -span),
-                    )
-                  }
-                >
-                  <ChevronLeft size={20} />
-                </button>
-                <input
-                  type="date"
-                  aria-label="Fecha de agenda"
-                  value={selected}
-                  onChange={(e) => {
-                    if (e.target.value) setSelected(e.target.value);
-                  }}
-                />
-                <button
-                  className="iconbtn"
-                  aria-label="Periodo siguiente"
-                  onClick={() =>
-                    setSelected(
-                      view === "month"
-                        ? addMonths(selected, 1)
-                        : addDays(selected, span),
-                    )
-                  }
-                >
-                  <ChevronRight size={20} />
-                </button>
-              </div>
-              <div className={`calendar-grid ${view}`}>
-                {Array.from({ length: span }, (_, i) =>
-                  addDays(calendarStart, i),
-                ).map((day) => {
-                  const ts = tasks.filter(
-                      (t) =>
-                        t.scheduled_day === day && t.status !== "cancelled",
-                    ),
-                    rs = b.filter(
-                      (n) =>
-                        states.get(n.id)?.enabled &&
-                        states.get(n.id)?.due === day,
-                    );
-                  return (
-                    <button
-                      key={day}
-                      className={day === today ? "current" : ""}
-                      aria-label={`${labelDay(day, { weekday: "long", day: "numeric", month: "long" })}: ${ts.length} actividades, ${rs.length} repasos`}
-                      aria-current={day === today ? "date" : undefined}
-                      onClick={() => {
-                        setSelected(day);
-                        setView("day");
-                      }}
-                    >
-                      <strong>
-                        {labelDay(day, {
-                          day: "numeric",
-                          month: view === "month" ? undefined : "short",
-                          weekday: view === "month" ? undefined : "short",
-                        })}
-                      </strong>
-                      <small className="calendar-count">
-                        {ts.length} actividades
-                      </small>
-                      {rs.length > 0 && (
-                        <span className="badge calendar-count">
-                          {rs.length} repasos
-                        </span>
-                      )}
-                      <span className="calendar-dots" aria-hidden="true">
-                        {ts.length > 0 && <i className="planned" />}
-                        {rs.length > 0 && <i className="reviews" />}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-              {view === "day" && (
-                <div>
-                  <p className="help">{tasks.filter(t => t.scheduled_day === selected && t.status !== "cancelled").length} actividades · {planMinutes(tasks.filter(t => t.scheduled_day === selected))} min previstos</p>
-                  {tasks
-                    .filter(
-                      (t) =>
-                        t.scheduled_day === selected &&
-                        t.status !== "cancelled",
-                    )
-                    .map(taskCard)}
-                  <div className="heading-actions">
-                    <Button variant="ghost" onClick={() => setEditing("new")}>Añadir una actividad</Button>
-                    <Button variant="secondary" onClick={() => setBulkOpen(true)}>Planificar varias en esta fecha</Button>
-                  </div>
-                </div>
-              )}
-              <Button
-                variant="ghost"
-                onClick={() =>
-                  download(
-                    "OpoPlan-agenda.ics",
-                    calendarICS([
-                      ...tasks
-                        .filter((t) => t.status === "pending")
-                        .map((t) => ({
-                          id: t.id,
-                          name: t.name,
-                          day: t.scheduled_day,
-                          time: t.scheduled_time,
-                          minutes: t.estimated_minutes,
-                          notes: t.notes,
-                        })),
-                      ...b
-                        .filter(
-                          (n) =>
-                            states.get(n.id)?.enabled && states.get(n.id)?.due,
-                        )
-                        .map((n) => ({
-                          id: n.id,
-                          name: "Repaso · " + n.name,
-                          day: states.get(n.id)!.due!,
-                          minutes: n.estimated_minutes,
-                          notes: states.get(n.id)!.reason,
-                        })),
-                    ]),
-                    "text/calendar",
-                  )
-                }
-              >
-                Exportar al calendario (.ics)
-              </Button>
-            </section>
-          )}
+                {!!completedToday.length && <details className="home-completed"><summary>{completedToday.length} {completedToday.length === 1 ? "actividad completada" : "actividades completadas"}</summary>{completedToday.map(taskRow)}</details>}
+                {!!overdueTasks.length && <details className="home-completed overdue"><summary>{overdueTasks.length} {overdueTasks.length === 1 ? "actividad de días anteriores pendiente" : "actividades de días anteriores pendientes"}</summary>{overdueTasks.map(taskRow)}</details>}
+              </section>
+              <section className="panel home-panel home-review-panel">
+                <div className="home-section-header"><div><h2>Repasos por hacer</h2><p>{unplannedDueReviews.length ? `${unplannedDueReviews.length} bloques necesitan atención.` : dueReviews.length ? "Los repasos pendientes ya figuran en tu plan de hoy." : studied ? "No tienes repasos automáticos pendientes." : "Todavía no has activado los repasos automáticos."}</p></div>{dueReviews.length > 0 && <button className="textbtn" onClick={() => navigate("reviews")}>Ver todos <ArrowRight size={16}/></button>}</div>
+                {unplannedDueReviews.length ? unplannedDueReviews.slice(0, 3).map(n => {
+                  const state = states.get(n.id)!;
+                  const late = !!state.due && state.due < today;
+                  return <div className="home-review-row" key={n.id}><span className={`home-review-symbol ${late ? "late" : ""}`}><RotateCcw size={18}/></span><div><strong>{n.name}</strong><small>{late ? `${daysBetween(state.due!, today)} días de retraso` : "Para hoy"} · {n.estimated_minutes} min</small></div><Button variant="secondary" onClick={() => start({ kind: "review", nodeIds: [n.id] })}>Repasar</Button></div>;
+                }) : <p className="home-inline-empty">{studied ? "No hay otros repasos vencidos ni previstos para hoy." : "Cuando marques un estudio inicial como completado, OpoPlan calculará su primer repaso."}</p>}
+              </section>
+            </div>
+            <aside className="home-secondary-stack">
+              <section className="panel home-panel home-tomorrow">
+                <div className="home-section-header"><div><span className="eyebrow">PRÓXIMO DÍA</span><h2>Mañana</h2><p>{labelDay(tomorrow, { weekday: "long", day: "numeric", month: "long" })}</p></div><button aria-label="Consultar mañana en agenda" className="iconbtn" onClick={() => showAgenda(tomorrow)}><ChevronRight size={20}/></button></div>
+                <p className="home-tomorrow-total"><strong>{tomorrowTasks.length}</strong> {tomorrowTasks.length === 1 ? "actividad" : "actividades"} · <strong>{tomorrowMinutes} min</strong> previstos</p>
+                {tomorrowTasks.length ? <div className="home-tomorrow-list">{tomorrowTasks.slice(0, 3).map(t => <div key={t.id}><span>{t.scheduled_time?.slice(0, 5) || "—"}</span><strong>{t.name}</strong></div>)}{tomorrowTasks.length > 3 && <small>Y {tomorrowTasks.length - 3} más</small>}</div> : <p className="home-inline-empty">Mañana todavía no tiene actividades previstas.</p>}
+                <Button variant="secondary" onClick={() => openPlanner(tomorrow)}><Plus size={16}/> {tomorrowTasks.length ? "Añadir actividades" : "Planificar mañana"}</Button>
+              </section>
+              {(stats.sessions.length > 0 || week.sessions.length > 0) && <section className="panel home-panel home-activity-mini"><div className="home-section-header"><div><h2>Actividad real</h2><p>Lo que has registrado, no solo planificado.</p></div><button className="textbtn" onClick={() => navigate("progress")}>Progreso <ArrowRight size={15}/></button></div><div className="home-activity-stats"><div><strong>{stats.sessions.length}</strong><small>Sesiones hoy</small></div><div><strong>{minutesLabel(week.total)}</strong><small>Últimos 7 días</small></div></div></section>}
+            </aside>
+          </div>
+          {agenda}
         </div>
-        <aside className="stack">
-          {week.sessions.length > 0 && (
-            <section className="panel weekly-panel">
-              <div className="section-title">
-                <h3>Tu ritmo semanal</h3>
-                <strong>{minutesLabel(week.total)}</strong>
-              </div>
-              <div
-                className="week-bars"
-                role="img"
-                aria-label={`Últimos siete días: ${minutesLabel(week.total)}. ${Array.from(
-                  { length: 7 },
-                  (_, i) => {
-                    const d = addDays(today, i - 6);
-                    return `${labelDay(d)}: ${minutesLabel(week.byDay[d] ?? 0)}`;
-                  },
-                ).join(". ")}`}
-              >
-                {Array.from({ length: 7 }, (_, i) => addDays(today, i - 6)).map(
-                  (day) => (
-                    <div key={day} className={day === today ? "current" : ""}>
-                      <div className="week-track">
-                        <span
-                          style={{
-                            height: `${Math.min(100, ((week.byDay[day] ?? 0) / Math.max(60, preferences.dailyMinutes * 60)) * 100)}%`,
-                          }}
-                        />
-                      </div>
-                      <small>{labelDay(day, { weekday: "narrow" })}</small>
-                    </div>
-                  ),
-                )}
-              </div>
-              <small className="muted">
-                Objetivo semanal: {preferences.weeklyMinutes} min
-              </small>
-            </section>
-          )}
-          {stats.sessions.length > 0 && (
-            <section className="panel">
-              <h3>Lo que ya has hecho hoy</h3>
-              <div className="recent-sessions">
-                {stats.sessions.map((session) => (
-                  <div key={session.id}>
-                    <Check size={16} />
-                    <span>
-                      {
-                        {
-                          study: "Estudio",
-                          review: "Repaso",
-                          practice: "Práctica",
-                        }[session.kind]
-                      }
-                      <small>{sessionContents(session.id)}</small>
-                    </span>
-                    <strong>{minutesLabel(session.duration_seconds)}</strong>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-          {yesterday.length > 0 && (
-            <section className="panel">
-              <h3>Ayer avanzaste</h3>
-              <p className="help">
-                {minutesLabel(
-                  yesterday.reduce((total, s) => total + s.duration_seconds, 0),
-                )}{" "}
-                · {yesterday.length}{" "}
-                {yesterday.length === 1 ? "actividad" : "actividades"}
-              </p>
-              <div className="recent-sessions">
-                {yesterday.slice(0, 3).map((session) => (
-                  <div key={session.id}>
-                    <span>{sessionContents(session.id)}</span>
-                    <strong>{minutesLabel(session.duration_seconds)}</strong>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-          {recent.length > 0 && (
-            <button
-              className="progress-link"
-              onClick={() => navigate("progress")}
-            >
-              <ArrowUpRight size={24} />
-              <span>
-                <strong>
-                  {studied}/{b.length} bloques estudiados
-                </strong>
-                <small>Consulta tus vueltas y tu progreso</small>
-              </span>
-              <ArrowRight size={18} />
-            </button>
-          )}
-        </aside>
-      </div>
+      )}
       <Modal title="Planificar varias actividades" open={bulkOpen} wide onClose={() => setBulkOpen(false)}>
         {bulkOpen && <BulkPlanForm key={selected} day={selected} onDone={() => setBulkOpen(false)} />}
       </Modal>
-      <Modal
-        title={editing === "new" ? "Planificar actividad" : "Editar actividad"}
-        open={!!editing}
-        onClose={() => setEditing(null)}
-      >
-        {editing && (
-          <PlanForm
-            task={editing === "new" ? undefined : editing}
-            day={selected}
-            onDone={() => setEditing(null)}
-          />
-        )}
+      <Modal title={editing === "new" ? "Planificar actividad" : "Editar actividad"} open={!!editing} onClose={() => setEditing(null)}>
+        {editing && <PlanForm key={editing === "new" ? `new-${selected}` : editing.id} task={editing === "new" ? undefined : editing} day={selected} onDone={() => setEditing(null)} />}
       </Modal>
     </>
   );
