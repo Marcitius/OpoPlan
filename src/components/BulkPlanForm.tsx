@@ -7,6 +7,8 @@ import { active, base } from "../core/types";
 import type { PlanTask, SessionKind, Node } from "../core/types";
 import { dayAt } from "../core/dates";
 import { blocks, nodePath, getStates } from "../core/stats";
+import { buildScopeIndex, immediateSubtopics, scopeRoots, scopeIndexOverlaps } from "../core/planScope";
+import { PlanContentPicker } from "./PlanContentPicker";
 import { planMinutes } from "../core/planner";
 
 type Draft = {
@@ -50,6 +52,7 @@ export function BulkPlanForm({ day, onDone }: { day: string; onDone: () => void 
   const [reviewPickerOpen, setReviewPickerOpen] = useState(true);
   const [query, setQuery] = useState("");
   const [topic, setTopic] = useState("");
+  const [scopePath, setScopePath] = useState<string[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [reviewMinutes, setReviewMinutes] = useState(20);
   const [reviewStart, setReviewStart] = useState("");
@@ -58,32 +61,26 @@ export function BulkPlanForm({ day, onDone }: { day: string; onDone: () => void 
 
   const available = useMemo(() => blocks(data, oppositionId), [data, oppositionId]);
   const availableById = useMemo(() => new Map(available.map(n => [n.id, n])), [available]);
-  // Agrupación por el contenedor raíz (tema o materia del temario).
-  // Los bloques conservan su identidad aunque el usuario cambie de tema.
-  const topicIndex = useMemo(() => {
-    const byId = new Map(data.nodes.map(n => [n.id, n]));
-    const options = new Map<string, string>();
-    const topicByBlock = new Map<string, string>();
-    for (const node of available) {
-      let root: Node = node;
-      const seen = new Set([node.id]);
-      while (root.parent_id) {
-        const parent = byId.get(root.parent_id);
-        if (!parent || seen.has(parent.id)) break;
-        seen.add(parent.id);
-        root = parent;
-      }
-      const id = root.kind === "container" ? root.id : "__root__";
-      const label = root.kind === "container" ? root.name : "Bloques sin tema";
-      options.set(id, label);
-      topicByBlock.set(node.id, id);
+  const scopeIndex = useMemo(() => buildScopeIndex(data.nodes, available), [data.nodes, available]);
+  const scopeContents = (id: string) => scopeIndex.get(id) ?? [];
+  const overlap = (a: string, b: string) => scopeIndexOverlaps(a, b, scopeIndex);
+  const roots = useMemo(() => scopeRoots(data.nodes, available), [data.nodes, available]);
+  const targetById = useMemo(() => new Map(data.nodes.filter(n =>
+    availableById.has(n.id) || (n.kind === "container" && !n.deleted_at && !n.archived &&
+      scopeIndex.has(n.id))
+  ).map(n => [n.id, n])), [data.nodes, available, availableById]);
+  const scopeId = scopePath.at(-1) || topic;
+  const nestedSelectors = useMemo(() => {
+    const out: { parent: Node; options: Node[]; selected: string }[] = [];
+    let parent = targetById.get(topic);
+    for (let i = 0; parent && i < 15; i++) {
+      const options = immediateSubtopics(parent.id, data.nodes, available);
+      if (!options.length) break;
+      out.push({ parent, options, selected: scopePath[i] || "" });
+      parent = scopePath[i] ? targetById.get(scopePath[i]) : undefined;
     }
-    return {
-      options: [...options].map(([id, label]) => ({ id, label }))
-        .sort((a, b) => a.label.localeCompare(b.label, "es", { numeric: true })),
-      topicByBlock,
-    };
-  }, [data.nodes, available]);
+    return out;
+  }, [topic, scopePath, targetById, data.nodes, available]);
   const categories = useMemo(() => active(data.categories), [data.categories]);
   const states = useMemo(() => getStates(data), [data]);
   const dayTasks = active(data.plan_tasks).filter(
@@ -92,35 +89,40 @@ export function BulkPlanForm({ day, onDone }: { day: string; onDone: () => void 
   const currentMinutes = planMinutes(dayTasks);
   const nextMinutes = drafts.reduce((sum, draft) => sum + (Number.isFinite(draft.minutes) ? draft.minutes : 0), 0);
 
-  const plannedReviewIds = new Set(
-    dayTasks.filter(t => t.kind === "review" && t.node_id).map(t => t.node_id)
-  );
-  const draftedReviewIds = new Set(
-    drafts.filter(d => d.kind === "review" && d.nodeId).map(d => d.nodeId)
-  );
+  const plannedReviewIds = dayTasks.filter(t => t.kind === "review" && t.node_id).map(t => t.node_id!);
+  const draftedReviewIds = drafts.filter(d => d.kind === "review" && d.nodeId).map(d => d.nodeId);
+  const otherReviews = [...plannedReviewIds, ...draftedReviewIds];
+  const occupied = (id: string) => otherReviews.some(other => overlap(id, other));
   const filteredBlocks = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase("es");
+    const within = new Set(scopeContents(scopeId));
     return available
-      .filter(n => !!topic && topicIndex.topicByBlock.get(n.id) === topic)
+      .filter(n => !!scopeId && within.has(n.id))
       .map(n => ({ node: n, path: nodePath(n, data.nodes) }))
       .filter(x => !needle || x.path.toLocaleLowerCase("es").includes(needle))
       .sort((a, b) => a.path.localeCompare(b.path, "es"));
-  }, [available, data.nodes, query, topic, topicIndex]);
+  }, [available, data.nodes, query, scopeId]);
   const shownBlocks = filteredBlocks.slice(0, 100);
-  const selectableVisible = shownBlocks.filter(
-    x => !plannedReviewIds.has(x.node.id) && !draftedReviewIds.has(x.node.id)
-  );
-  const chosen = selectedIds.filter(
-    id => availableById.has(id) && !plannedReviewIds.has(id) && !draftedReviewIds.has(id)
-  );
+  const chosen = selectedIds.filter(id => targetById.has(id) && !occupied(id));
+  const selectableVisible = shownBlocks.filter(x => !occupied(x.node.id) &&
+    !chosen.some(id => id !== x.node.id && overlap(id, x.node.id)));
   const allVisibleSelected = selectableVisible.length > 0 && selectableVisible.every(x => chosen.includes(x.node.id));
+  const scopeNode = targetById.get(scopeId);
+  const scopeCount = scopeId ? scopeContents(scopeId).length : 0;
+  const topicAlreadyChosen = Boolean(scopeId && chosen.includes(scopeId));
+  const scopeConflicts = Boolean(scopeId && occupied(scopeId));
   const changeDraft = (key: string, update: Partial<Draft>) => {
     setDrafts(old => old.map(d => d.key === key ? { ...d, ...update } : d));
   };
   const add = (kind: SessionKind) => setDrafts(old => [...old, makeDraft(kind, old.at(-1))]);
 
   function toggleBlock(id: string) {
-    setSelectedIds(old => old.includes(id) ? old.filter(x => x !== id) : [...old, id]);
+    if (occupied(id)) return;
+    setSelectedIds(old => {
+      if (old.includes(id)) return old.filter(x => x !== id);
+      // Prevent double-scheduling the same content under a topic and a block.
+      return [...old.filter(other => !overlap(other, id)), id];
+    });
   }
 
   function addSelectedReviews() {
@@ -130,12 +132,12 @@ export function BulkPlanForm({ day, onDone }: { day: string; onDone: () => void 
       return;
     }
     // Respeta el orden en el que se marcaron los bloques, incluso entre temas.
-    const picked = chosen.map(id => availableById.get(id)).filter((n): n is Node => !!n);
+    const picked = chosen.map(id => targetById.get(id)).filter((n): n is Node => !!n);
     let time = reviewStart;
     const additions: Draft[] = picked.map(n => {
       const draft: Draft = {
         key: crypto.randomUUID(),
-        name: n.name,
+        name: n.kind === "container" ? `Repaso completo: ${n.name}` : n.name,
         kind: "review",
         nodeId: n.id,
         categoryId: "",
@@ -160,7 +162,7 @@ export function BulkPlanForm({ day, onDone }: { day: string; onDone: () => void 
     setError("");
     try {
       const tasks: PlanTask[] = drafts.map(d => {
-        const related = available.find(n => n.id === d.nodeId);
+        const related = targetById.get(d.nodeId);
         const category = categories.find(c => c.id === d.categoryId);
         const name = d.name.trim() || related?.name || category?.name || "";
         if (!name) throw new Error("Indica el nombre de cada actividad o selecciona un bloque.");
@@ -176,12 +178,12 @@ export function BulkPlanForm({ day, onDone }: { day: string; onDone: () => void 
         };
       });
       if (!tasks.length) throw new Error("Añade al menos una actividad.");
-      const usedIds = new Set(plannedReviewIds);
+      const usedIds = [...plannedReviewIds];
       for (const task of tasks) {
         if (task.kind !== "review" || !task.node_id) continue;
-        if (usedIds.has(task.node_id))
-          throw new Error(`«${task.name}» ya tiene un repaso planificado para esta fecha.`);
-        usedIds.add(task.node_id);
+        if (usedIds.some(id => overlap(id, task.node_id)))
+          throw new Error(`«${task.name}» se solapa con otro repaso planificado para ese día.`);
+        usedIds.push(task.node_id);
       }
       setBusy(true);
       await commit(
@@ -214,13 +216,26 @@ export function BulkPlanForm({ day, onDone }: { day: string; onDone: () => void 
         <ChevronDown className={reviewPickerOpen ? "expanded" : ""} size={20} />
       </button>
       {reviewPickerOpen && <div className="bulk-review-picker-body">
-        <Field label="1. Elige el tema">
-          <select value={topic} onChange={e => { setTopic(e.target.value); setQuery(""); }} aria-label="Filtrar bloques por tema">
+        <Field label="1. Elige tema o materia">
+          <select value={topic} onChange={e => { setTopic(e.target.value); setScopePath([]); setQuery(""); }} aria-label="Filtrar bloques por tema">
             <option value="">Seleccionar tema…</option>
-            {topicIndex.options.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+            {roots.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
         </Field>
-        <p className="help">Marca los bloques de este tema. Después puedes cambiar a otro: la selección anterior se conserva.</p>
+        {nestedSelectors.map((level, i) => <Field key={level.parent.id} label={i === 0 ? "2. Subtema o apartado (opcional)" : `Nivel ${i + 2} (opcional)`}>
+          <select value={level.selected} onChange={e => { setScopePath(old => [...old.slice(0, i), ...(e.target.value ? [e.target.value] : [])]); setQuery(""); }}>
+            <option value="">Todo «{level.parent.name}»</option>
+            {level.options.map(n => <option key={n.id} value={n.id}>{n.name}</option>)}
+          </select>
+        </Field>)}
+        {scopeNode && <div className="bulk-topic-full-review">
+          <div><strong>Repasar {scopeNode.name} completo</strong><small>Una actividad · {scopeCount} {scopeCount === 1 ? "bloque" : "bloques"} incluidos. Al realizarla podrás valorar cada bloque.</small></div>
+          <Button type="button" variant="secondary" disabled={scopeConflicts} onClick={() => toggleBlock(scopeId)}>
+            {topicAlreadyChosen ? "Quitar selección" : "Seleccionar completo"}
+          </Button>
+          {scopeConflicts && <small>Ya existe un repaso solapado en el plan de esta fecha.</small>}
+        </div>}
+        <p className="help">Marca bloques concretos o selecciona el tema completo. Puedes cambiar de tema: la selección anterior permanece.</p>
         {topic && <label className="bulk-review-search">
           <Search size={18} />
           <input
@@ -232,11 +247,13 @@ export function BulkPlanForm({ day, onDone }: { day: string; onDone: () => void 
           />
         </label>}
         <div className="bulk-review-picker-list-header">
-          <strong>{topic ? `${filteredBlocks.length} bloques en este tema` : "Elige un tema para ver sus bloques"}</strong>
+          <strong>{topic ? `${filteredBlocks.length} bloques en esta sección` : "Elige un tema para ver sus bloques"}</strong>
           <div className="bulk-review-picker-list-actions">
             <button type="button" className="textbtn" disabled={!selectableVisible.length} onClick={() => {
               const ids = selectableVisible.map(x => x.node.id);
-              setSelectedIds(old => allVisibleSelected ? old.filter(id => !ids.includes(id)) : [...new Set([...old, ...ids])]);
+              setSelectedIds(old => allVisibleSelected
+                ? old.filter(id => !ids.includes(id))
+                : [...old.filter(id => !ids.some(target => overlap(id, target))), ...ids]);
             }}>{allVisibleSelected ? "Desmarcar visibles" : "Seleccionar visibles"}</button>
             <button type="button" className="textbtn" disabled={!selectedIds.length} onClick={() => setSelectedIds([])}>Limpiar</button>
           </div>
@@ -244,13 +261,13 @@ export function BulkPlanForm({ day, onDone }: { day: string; onDone: () => void 
         {topic && <div className="bulk-review-checkbox-list" role="group" aria-label="Bloques del tema seleccionado">
           {!shownBlocks.length && <p className="help bulk-review-empty">No hay bloques que coincidan con la búsqueda en este tema.</p>}
           {shownBlocks.map(({ node, path }) => {
-            const unavailable = plannedReviewIds.has(node.id) || draftedReviewIds.has(node.id);
+            const unavailable = occupied(node.id) || chosen.some(id => id !== node.id && overlap(id, node.id));
             const parts = path.split(" / ");
             const scheduled = states.get(node.id);
             return <label className={`bulk-review-choice ${unavailable ? "unavailable" : ""}`} key={node.id}>
               <input
                 type="checkbox"
-                checked={unavailable || chosen.includes(node.id)}
+                checked={chosen.includes(node.id)}
                 disabled={unavailable}
                 onChange={() => toggleBlock(node.id)}
               />
@@ -258,7 +275,7 @@ export function BulkPlanForm({ day, onDone }: { day: string; onDone: () => void 
                 <strong>{node.name}</strong>
                 <small>{parts.slice(0, -1).join(" / ") || "Sin carpeta"}</small>
                 {unavailable
-                  ? <small>Ya incluido en el plan de este día</small>
+                  ? <small>{occupied(node.id) ? "Ya incluido en el plan de este día" : "Incluido en el tema completo seleccionado"}</small>
                   : !scheduled?.studied
                     ? <small>Estudio inicial aún no completado</small>
                     : scheduled.due
@@ -271,22 +288,22 @@ export function BulkPlanForm({ day, onDone }: { day: string; onDone: () => void 
         {topic && filteredBlocks.length > shownBlocks.length && <p className="help">Se muestran los primeros 100 resultados. Utiliza la búsqueda para encontrar otros bloques.</p>}
         <section className="bulk-review-selection" aria-label="Selección acumulada de bloques">
           <div className="bulk-review-selection-heading">
-            <strong>2. Tu selección de todos los temas</strong>
-            <span className="badge">{chosen.length} {chosen.length === 1 ? "bloque" : "bloques"}</span>
+            <strong>Tu selección, aunque cambies de tema</strong>
+            <span className="badge">{chosen.length} {chosen.length === 1 ? "selección" : "selecciones"}</span>
           </div>
           {chosen.length ? <div className="bulk-review-selection-list">
             {chosen.map(id => {
-              const node = availableById.get(id)!;
+              const node = targetById.get(id)!;
               const path = nodePath(node, data.nodes).split(" / ").slice(0, -1).join(" / ");
               return <div className="bulk-review-selected-row" key={id}>
-                <span><strong>{node.name}</strong><small>{path || "Sin tema"}</small></span>
+                <span><strong>{node.kind === "container" ? `Tema completo: ${node.name}` : node.name}</strong><small>{node.kind === "container" ? `${scopeContents(id).length} bloques incluidos · ` : ""}{path || "Sin tema"}</small></span>
                 <button type="button" className="iconbtn" onClick={() => toggleBlock(id)} aria-label={`Quitar ${node.name} de la selección`}><X size={17} /></button>
               </div>;
             })}
           </div> : <p className="help">Todavía no has seleccionado bloques. Puedes elegirlos de varios temas antes de añadirlos al día.</p>}
         </section>
         <div className="bulk-review-settings form-grid">
-          <Field label="Minutos por bloque">
+          <Field label="Minutos por actividad">
             <input type="number" min="1" max="1440" value={reviewMinutes} onChange={e => setReviewMinutes(Number(e.target.value))} />
           </Field>
           <Field label="Primera hora (opcional)">
@@ -296,12 +313,12 @@ export function BulkPlanForm({ day, onDone }: { day: string; onDone: () => void 
         <Button type="button" disabled={!chosen.length} onClick={addSelectedReviews}>
           <Plus size={17} /> Añadir {chosen.length} {chosen.length === 1 ? "repaso" : "repasos"} al día
         </Button>
-        <p className="help">Podrás revisar las actividades antes de guardarlas. La planificación no cuenta como repaso realizado y no modifica las fechas del algoritmo.</p>
+        <p className="help">Un tema completo se guarda como una actividad, y al realizarlo podrás valorar cada bloque incluido. Planificar no cuenta como repasar.</p>
       </div>}
     </section>
 
     <div className="bulk-plan-prepared-heading">
-      <strong>3. Actividades preparadas para el día</strong>
+      <strong>Actividades preparadas para el día</strong>
       <span className="badge">{drafts.length}</span>
     </div>
     {drafts.length === 0 && <p className="help">Todavía no has añadido actividades. Selecciona bloques arriba o añade estudio, repaso o práctica con los botones siguientes.</p>}
@@ -321,12 +338,16 @@ export function BulkPlanForm({ day, onDone }: { day: string; onDone: () => void 
             const name = categories.find(x => x.id === e.target.value)?.name || "";
             changeDraft(d.key, {categoryId:e.target.value, name});
           }}><option value="">Sin categoría</option>{categories.map(c => <option value={c.id} key={c.id}>{c.name}</option>)}</select>
-        </Field> : <Field label="Bloque del temario (opcional)">
-          <select value={d.nodeId} onChange={e => {
-            const name = available.find(x => x.id === e.target.value)?.name || "";
-            changeDraft(d.key, {nodeId:e.target.value, name});
-          }}><option value="">Seleccionar bloque</option>{available.map(n => <option key={n.id} value={n.id}>{nodePath(n, data.nodes)}</option>)}</select>
-        </Field>}
+        </Field> : <div className="stack bulk-content-picker">
+          <PlanContentPicker
+            nodes={data.nodes} availableBlocks={available} value={d.nodeId}
+            onChange={id => {
+              const target = targetById.get(id);
+              changeDraft(d.key, { nodeId: id, name: target ? (target.kind === "container" ? `Repaso completo: ${target.name}` : target.name) : "" });
+            }}
+            kind={d.kind}
+          />
+        </div>}
         <Field label="Actividad">
           <input maxLength={300} required value={d.name} onChange={e => changeDraft(d.key, {name:e.target.value})} placeholder={d.kind === "practice" ? "Ej.: Test de inglés" : "Nombre de la actividad"}/>
         </Field>

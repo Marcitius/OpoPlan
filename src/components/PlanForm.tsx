@@ -4,7 +4,8 @@ import { Button, Field, ErrorText, Disclosure } from "./ui";
 import { base, active } from "../core/types";
 import type { PlanTask, SessionKind } from "../core/types";
 import { dayAt } from "../core/dates";
-import { blocks, nodePath } from "../core/stats";
+import { blocks } from "../core/stats";
+import { PlanContentPicker } from "./PlanContentPicker";
 export function PlanForm({
   task,
   onDone,
@@ -104,25 +105,22 @@ export function PlanForm({
           />
         </Field>
       </div>
-      <Field label="Bloque relacionado (opcional)">
-        <select
-          value={node}
-          onChange={(e) => {
-            setNode(e.target.value);
-            if (!name)
-              setName(
-                data.nodes.find((n) => n.id === e.target.value)?.name ?? "",
-              );
-          }}
-        >
-          <option value="">Seleccionar bloque</option>
-          {blocks(data, oppositionId).map((n) => (
-            <option key={n.id} value={n.id}>
-              {nodePath(n, data.nodes)}
-            </option>
-          ))}
-        </select>
-      </Field>
+      {kind !== "practice" && <PlanContentPicker
+        nodes={data.nodes}
+        availableBlocks={blocks(data, oppositionId)}
+        value={node}
+        kind={kind}
+        onChange={id => {
+          setNode(id);
+          const target = data.nodes.find(n => n.id === id);
+          const previous = data.nodes.find(n => n.id === node);
+          const autoNames = previous ? [
+            previous.name, `Repaso completo: ${previous.name}`, `Estudio completo: ${previous.name}`,
+          ] : [];
+          if (target && (!name || autoNames.includes(name)))
+            setName(target.kind === "container" ? `${kind === "review" ? "Repaso completo" : "Estudio completo"}: ${target.name}` : target.name);
+        }}
+      />}
       {kind === "practice" && (
         <Field label="Categoría">
           <select
