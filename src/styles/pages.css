@@ -1385,3 +1385,41 @@
   .bulk-plan-entry .form-grid { grid-template-columns: minmax(0, 1fr); }
   .bulk-plan-actions .btn { font-size: .82rem; padding: 10px; }
 }
+
+/* Planificación de varios bloques de repaso con selección táctil. */
+.bulk-review-picker { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--surface); min-width: 0; }
+.bulk-review-picker-toggle { display: flex; width: 100%; min-height: 70px; padding: 14px 16px; gap: 12px; text-align: left; align-items: center; }
+.bulk-review-picker-toggle > span:nth-child(2) { flex: 1; min-width: 0; display: grid; gap: 3px; }
+.bulk-review-picker-toggle strong { font-size: .94rem; line-height: 1.35; }
+.bulk-review-picker-toggle small { color: var(--muted); font-size: .79rem; line-height: 1.45; }
+.bulk-review-picker-toggle > svg { flex-shrink: 0; color: var(--muted); transition: transform .15s; }
+.bulk-review-picker-toggle > svg.expanded { transform: rotate(180deg); }
+.bulk-review-picker-icon { width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: var(--green); background: var(--soft); border-radius: 10px; }
+.bulk-review-picker-body { display: flex; flex-direction: column; gap: 12px; padding: 16px; border-top: 1px solid var(--line); min-width: 0; }
+.bulk-review-search { display: flex; align-items: center; min-width: 0; gap: 9px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; color: var(--muted); }
+.bulk-review-search input { border: none !important; background: transparent !important; outline-offset: -2px; min-width: 0; width: 100%; min-height: 45px; }
+.bulk-review-picker-list-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 7px 12px; font-size: .88rem; }
+.bulk-review-picker-list-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; }
+.bulk-review-picker-list-actions .textbtn { min-height: 36px; }
+.bulk-review-checkbox-list { border: 1px solid var(--line); border-radius: 10px; max-height: 280px; overflow-y: auto; overscroll-behavior: contain; min-width: 0; }
+.bulk-review-choice { display: flex; gap: 12px; align-items: flex-start; padding: 12px; min-height: 55px; cursor: pointer; }
+.bulk-review-choice + .bulk-review-choice { border-top: 1px solid var(--line); }
+.bulk-review-choice:hover { background: var(--soft); }
+.bulk-review-choice input { flex-shrink: 0; width: 19px; height: 19px; margin-top: 1px; accent-color: var(--green); }
+.bulk-review-choice-text { flex: 1; min-width: 0; display: grid; gap: 2px; overflow-wrap: anywhere; }
+.bulk-review-choice-text strong { font-size: .875rem; line-height: 1.4; }
+.bulk-review-choice-text small { font-size: .75rem; line-height: 1.5; color: var(--muted); }
+.bulk-review-choice.unavailable { cursor: default; opacity: .66; }
+.bulk-review-choice.unavailable:hover { background: transparent; }
+.bulk-review-empty { padding: 16px; }
+.bulk-review-settings { grid-template-columns: repeat(2,minmax(0,1fr)); }
+@media (max-width: 620px) {
+  .bulk-review-picker-body { padding: 12px; }
+  .bulk-review-picker-toggle { padding: 12px; }
+  .bulk-review-settings { grid-template-columns: 1fr; }
+  .bulk-review-picker-list-actions { gap: 8px 14px; }
+}
+@media (prefers-reduced-motion: reduce) { .bulk-review-picker-toggle > svg { transition: none; } }
+
+/* Keep independent notes readable in the planned-day task list. */
+.task-copy .planned-note { color: var(--muted); white-space: pre-line; overflow-wrap: anywhere; }

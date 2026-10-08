@@ -184,6 +184,7 @@ export function Today({
             </span>
           )}
         </small>
+        {t.notes.trim() && <small className="planned-note">{t.notes}</small>}
       </div>
       <span className="duration">{t.scheduled_time ? `${t.scheduled_time.slice(0, 5)} · ` : ""}{t.estimated_minutes} min</span>
       {t.status === "pending" && (
