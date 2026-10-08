@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react";
 import type { FormEvent } from "react";
-import { Plus, Trash2, CalendarDays, Search, CheckSquare, ChevronDown } from "lucide-react";
+import { Plus, Trash2, CalendarDays, Search, CheckSquare, ChevronDown, X } from "lucide-react";
 import { useApp, change } from "../data/context";
 import { Button, Field, ErrorText } from "./ui";
 import { active, base } from "../core/types";
-import type { PlanTask, SessionKind } from "../core/types";
+import type { PlanTask, SessionKind, Node } from "../core/types";
 import { dayAt } from "../core/dates";
 import { blocks, nodePath, getStates } from "../core/stats";
 import { planMinutes } from "../core/planner";
@@ -49,6 +49,7 @@ export function BulkPlanForm({ day, onDone }: { day: string; onDone: () => void 
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [reviewPickerOpen, setReviewPickerOpen] = useState(true);
   const [query, setQuery] = useState("");
+  const [topic, setTopic] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [reviewMinutes, setReviewMinutes] = useState(20);
   const [reviewStart, setReviewStart] = useState("");
@@ -56,6 +57,33 @@ export function BulkPlanForm({ day, onDone }: { day: string; onDone: () => void 
   const [busy, setBusy] = useState(false);
 
   const available = useMemo(() => blocks(data, oppositionId), [data, oppositionId]);
+  const availableById = useMemo(() => new Map(available.map(n => [n.id, n])), [available]);
+  // Agrupación por el contenedor raíz (tema o materia del temario).
+  // Los bloques conservan su identidad aunque el usuario cambie de tema.
+  const topicIndex = useMemo(() => {
+    const byId = new Map(data.nodes.map(n => [n.id, n]));
+    const options = new Map<string, string>();
+    const topicByBlock = new Map<string, string>();
+    for (const node of available) {
+      let root: Node = node;
+      const seen = new Set([node.id]);
+      while (root.parent_id) {
+        const parent = byId.get(root.parent_id);
+        if (!parent || seen.has(parent.id)) break;
+        seen.add(parent.id);
+        root = parent;
+      }
+      const id = root.kind === "container" ? root.id : "__root__";
+      const label = root.kind === "container" ? root.name : "Bloques sin tema";
+      options.set(id, label);
+      topicByBlock.set(node.id, id);
+    }
+    return {
+      options: [...options].map(([id, label]) => ({ id, label }))
+        .sort((a, b) => a.label.localeCompare(b.label, "es", { numeric: true })),
+      topicByBlock,
+    };
+  }, [data.nodes, available]);
   const categories = useMemo(() => active(data.categories), [data.categories]);
   const states = useMemo(() => getStates(data), [data]);
   const dayTasks = active(data.plan_tasks).filter(
@@ -73,16 +101,17 @@ export function BulkPlanForm({ day, onDone }: { day: string; onDone: () => void 
   const filteredBlocks = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase("es");
     return available
+      .filter(n => !!topic && topicIndex.topicByBlock.get(n.id) === topic)
       .map(n => ({ node: n, path: nodePath(n, data.nodes) }))
       .filter(x => !needle || x.path.toLocaleLowerCase("es").includes(needle))
       .sort((a, b) => a.path.localeCompare(b.path, "es"));
-  }, [available, data.nodes, query]);
+  }, [available, data.nodes, query, topic, topicIndex]);
   const shownBlocks = filteredBlocks.slice(0, 100);
   const selectableVisible = shownBlocks.filter(
     x => !plannedReviewIds.has(x.node.id) && !draftedReviewIds.has(x.node.id)
   );
   const chosen = selectedIds.filter(
-    id => available.some(n => n.id === id) && !plannedReviewIds.has(id) && !draftedReviewIds.has(id)
+    id => availableById.has(id) && !plannedReviewIds.has(id) && !draftedReviewIds.has(id)
   );
   const allVisibleSelected = selectableVisible.length > 0 && selectableVisible.every(x => chosen.includes(x.node.id));
   const changeDraft = (key: string, update: Partial<Draft>) => {
@@ -100,7 +129,8 @@ export function BulkPlanForm({ day, onDone }: { day: string; onDone: () => void 
       setError("Indica una duración por bloque entre 1 y 1.440 minutos.");
       return;
     }
-    const picked = available.filter(n => chosen.includes(n.id));
+    // Respeta el orden en el que se marcaron los bloques, incluso entre temas.
+    const picked = chosen.map(id => availableById.get(id)).filter((n): n is Node => !!n);
     let time = reviewStart;
     const additions: Draft[] = picked.map(n => {
       const draft: Draft = {
@@ -184,7 +214,14 @@ export function BulkPlanForm({ day, onDone }: { day: string; onDone: () => void 
         <ChevronDown className={reviewPickerOpen ? "expanded" : ""} size={20} />
       </button>
       {reviewPickerOpen && <div className="bulk-review-picker-body">
-        <label className="bulk-review-search">
+        <Field label="1. Elige el tema">
+          <select value={topic} onChange={e => { setTopic(e.target.value); setQuery(""); }} aria-label="Filtrar bloques por tema">
+            <option value="">Seleccionar tema…</option>
+            {topicIndex.options.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+          </select>
+        </Field>
+        <p className="help">Marca los bloques de este tema. Después puedes cambiar a otro: la selección anterior se conserva.</p>
+        {topic && <label className="bulk-review-search">
           <Search size={18} />
           <input
             type="search"
@@ -193,9 +230,9 @@ export function BulkPlanForm({ day, onDone }: { day: string; onDone: () => void 
             value={query}
             onChange={e => setQuery(e.target.value)}
           />
-        </label>
+        </label>}
         <div className="bulk-review-picker-list-header">
-          <strong>{chosen.length} seleccionados</strong>
+          <strong>{topic ? `${filteredBlocks.length} bloques en este tema` : "Elige un tema para ver sus bloques"}</strong>
           <div className="bulk-review-picker-list-actions">
             <button type="button" className="textbtn" disabled={!selectableVisible.length} onClick={() => {
               const ids = selectableVisible.map(x => x.node.id);
@@ -204,8 +241,8 @@ export function BulkPlanForm({ day, onDone }: { day: string; onDone: () => void 
             <button type="button" className="textbtn" disabled={!selectedIds.length} onClick={() => setSelectedIds([])}>Limpiar</button>
           </div>
         </div>
-        <div className="bulk-review-checkbox-list" role="group" aria-label="Bloques del temario">
-          {!shownBlocks.length && <p className="help bulk-review-empty">No hay bloques que coincidan con la búsqueda. Añade bloques revisables en Temario si aún no tienes ninguno.</p>}
+        {topic && <div className="bulk-review-checkbox-list" role="group" aria-label="Bloques del tema seleccionado">
+          {!shownBlocks.length && <p className="help bulk-review-empty">No hay bloques que coincidan con la búsqueda en este tema.</p>}
           {shownBlocks.map(({ node, path }) => {
             const unavailable = plannedReviewIds.has(node.id) || draftedReviewIds.has(node.id);
             const parts = path.split(" / ");
@@ -230,8 +267,24 @@ export function BulkPlanForm({ day, onDone }: { day: string; onDone: () => void 
               </span>
             </label>;
           })}
-        </div>
-        {filteredBlocks.length > shownBlocks.length && <p className="help">Se muestran los primeros 100 resultados. Utiliza la búsqueda para encontrar otros bloques.</p>}
+        </div>}
+        {topic && filteredBlocks.length > shownBlocks.length && <p className="help">Se muestran los primeros 100 resultados. Utiliza la búsqueda para encontrar otros bloques.</p>}
+        <section className="bulk-review-selection" aria-label="Selección acumulada de bloques">
+          <div className="bulk-review-selection-heading">
+            <strong>2. Tu selección de todos los temas</strong>
+            <span className="badge">{chosen.length} {chosen.length === 1 ? "bloque" : "bloques"}</span>
+          </div>
+          {chosen.length ? <div className="bulk-review-selection-list">
+            {chosen.map(id => {
+              const node = availableById.get(id)!;
+              const path = nodePath(node, data.nodes).split(" / ").slice(0, -1).join(" / ");
+              return <div className="bulk-review-selected-row" key={id}>
+                <span><strong>{node.name}</strong><small>{path || "Sin tema"}</small></span>
+                <button type="button" className="iconbtn" onClick={() => toggleBlock(id)} aria-label={`Quitar ${node.name} de la selección`}><X size={17} /></button>
+              </div>;
+            })}
+          </div> : <p className="help">Todavía no has seleccionado bloques. Puedes elegirlos de varios temas antes de añadirlos al día.</p>}
+        </section>
         <div className="bulk-review-settings form-grid">
           <Field label="Minutos por bloque">
             <input type="number" min="1" max="1440" value={reviewMinutes} onChange={e => setReviewMinutes(Number(e.target.value))} />
@@ -247,6 +300,10 @@ export function BulkPlanForm({ day, onDone }: { day: string; onDone: () => void 
       </div>}
     </section>
 
+    <div className="bulk-plan-prepared-heading">
+      <strong>3. Actividades preparadas para el día</strong>
+      <span className="badge">{drafts.length}</span>
+    </div>
     {drafts.length === 0 && <p className="help">Todavía no has añadido actividades. Selecciona bloques arriba o añade estudio, repaso o práctica con los botones siguientes.</p>}
     {drafts.map((d, i) => <section className="bulk-plan-entry" key={d.key} aria-label={`Actividad ${i + 1}`}>
       <div className="bulk-plan-entry-head">

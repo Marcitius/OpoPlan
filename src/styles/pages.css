@@ -1423,3 +1423,17 @@
 
 /* Keep independent notes readable in the planned-day task list. */
 .task-copy .planned-note { color: var(--muted); white-space: pre-line; overflow-wrap: anywhere; }
+
+
+/* Elegir tema y conservar los bloques marcados entre temas. */
+.bulk-review-selection { border: 1px solid var(--line); background: var(--soft); border-radius: 12px; padding: 13px; display: grid; gap: 10px; min-width: 0; }
+.bulk-review-selection-heading, .bulk-plan-prepared-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.bulk-review-selection-heading strong, .bulk-plan-prepared-heading strong { font-size: .89rem; line-height: 1.45; }
+.bulk-review-selection-list { display: grid; gap: 7px; max-height: 225px; overflow-y: auto; overscroll-behavior: contain; }
+.bulk-review-selected-row { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 9px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
+.bulk-review-selected-row > span { flex: 1; min-width: 0; display: grid; gap: 2px; overflow-wrap: anywhere; }
+.bulk-review-selected-row strong { font-size: .84rem; line-height: 1.4; }
+.bulk-review-selected-row small { color: var(--muted); font-size: .75rem; line-height: 1.35; }
+.bulk-review-selected-row .iconbtn { flex: 0 0 38px; min-width: 38px; min-height: 40px; }
+.bulk-plan-prepared-heading { margin-top: 8px; }
+@media (max-width: 620px) { .bulk-review-selection { padding: 10px; } }
