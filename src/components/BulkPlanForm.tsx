@@ -180,10 +180,11 @@ export function BulkPlanForm({ day, onDone }: { day: string; onDone: () => void 
       if (!tasks.length) throw new Error("Añade al menos una actividad.");
       const usedIds = [...plannedReviewIds];
       for (const task of tasks) {
-        if (task.kind !== "review" || !task.node_id) continue;
-        if (usedIds.some(id => overlap(id, task.node_id)))
+        const targetId = task.node_id;
+        if (task.kind !== "review" || !targetId) continue;
+        if (usedIds.some(id => overlap(id, targetId)))
           throw new Error(`«${task.name}» se solapa con otro repaso planificado para ese día.`);
-        usedIds.push(task.node_id);
+        usedIds.push(targetId);
       }
       setBusy(true);
       await commit(
