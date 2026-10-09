@@ -6,6 +6,7 @@ import type { PlanTask, SessionKind } from "../core/types";
 import { dayAt } from "../core/dates";
 import { blocks } from "../core/stats";
 import { PlanContentPicker } from "./PlanContentPicker";
+import { estimateScopeMinutes } from "../core/estimates";
 export function PlanForm({
   task,
   onDone,
@@ -43,6 +44,7 @@ export function PlanForm({
             node_id: node || null,
             category_id: category || null,
             scheduled_day: date,
+            is_backlog: false,
             scheduled_time: time || null,
             original_day: task?.original_day ?? date,
             estimated_minutes: minutes,
@@ -72,7 +74,7 @@ export function PlanForm({
         <Field label="Tipo">
           <select
             value={kind}
-            onChange={(e) => setKind(e.target.value as SessionKind)}
+            onChange={(e) => { const next = e.target.value as SessionKind; setKind(next); if (!task && node && next !== "practice") setMinutes(estimateScopeMinutes(data, oppositionId, node, next).minutes); }}
           >
             <option value="study">Estudio nuevo</option>
             <option value="review">Repaso</option>
@@ -112,6 +114,7 @@ export function PlanForm({
         kind={kind}
         onChange={id => {
           setNode(id);
+          if (!task && id) setMinutes(estimateScopeMinutes(data, oppositionId, id, kind).minutes);
           const target = data.nodes.find(n => n.id === id);
           const previous = data.nodes.find(n => n.id === node);
           const autoNames = previous ? [
@@ -121,6 +124,10 @@ export function PlanForm({
             setName(target.kind === "container" ? `${kind === "review" ? "Repaso completo" : "Estudio completo"}: ${target.name}` : target.name);
         }}
       />}
+      {kind !== "practice" && node && <div className="time-estimate-hint">
+        <small className="help">Sugerencia según tu historial: {estimateScopeMinutes(data, oppositionId, node, kind).minutes} min · {estimateScopeMinutes(data, oppositionId, node, kind).source === "default" ? "aún sin tiempos reales" : "calculado con tus sesiones"}.</small>
+        <Button type="button" variant="ghost" onClick={() => setMinutes(estimateScopeMinutes(data, oppositionId, node, kind).minutes)}>Aplicar sugerencia</Button>
+      </div>}
       {kind === "practice" && (
         <Field label="Categoría">
           <select

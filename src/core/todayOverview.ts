@@ -11,7 +11,7 @@ export function weekStartISO(date: string): string {
 
 /** Planned activities are separate from actual sessions and spaced reviews. */
 export function dayPlanSummary(tasks: PlanTask[], day: string) {
-  const activities = tasks.filter(t => t.scheduled_day === day && t.status !== "cancelled");
+  const activities = tasks.filter(t => !t.is_backlog && t.scheduled_day === day && t.status !== "cancelled");
   return {
     activities,
     pending: activities.filter(t => t.status === "pending"),

@@ -41,6 +41,7 @@ import { parseTree, treeToNodes, download } from "../core/import";
 import type { TreeItem } from "../core/import";
 import { outlineIndex } from "../core/outline";
 import { mastery, effectiveEvents } from "../core/memory";
+import { estimateBlockMinutes } from "../core/estimates";
 export function Syllabus({ start }: { start: (o: SessionOptions) => void }) {
   const { owner, data, oppositionId, commit, save, memory, preferences } =
     useApp();
@@ -745,6 +746,10 @@ export function Syllabus({ start }: { start: (o: SessionOptions) => void }) {
                           <strong>
                             {m.due ? labelDay(m.due) : "Sin programar"}
                           </strong>
+                        </div>
+                        <div>
+                          <span>Próximo repaso estimado</span>
+                          <strong>~{estimateBlockMinutes(data, detail.id, "review").minutes} min</strong>
                         </div>
                         <div>
                           <span>Tiempo acumulado</span>

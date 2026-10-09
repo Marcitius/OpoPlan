@@ -17,6 +17,7 @@ import {
   ChevronRight,
   Ellipsis,
   CalendarDays,
+  ListTodo,
 } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
 import { connection, makeClient, validateConnection } from "./data/client";
@@ -26,6 +27,7 @@ import { SessionForm } from "./components/SessionForm";
 import type { SessionOptions } from "./components/SessionForm";
 import { base, DEFAULT_PREFS, active } from "./core/types";
 import { Today } from "./pages/Today";
+import { Tasks } from "./pages/Tasks";
 import { Syllabus } from "./pages/Syllabus";
 import { Reviews } from "./pages/Reviews";
 import { Study } from "./pages/Study";
@@ -48,9 +50,11 @@ export type Route =
   | "tests"
   | "settings"
   | "more"
-  | "agenda";
+  | "agenda"
+  | "tasks";
 const nav = [
   { id: "today", name: "Hoy", icon: LayoutDashboard },
+  { id: "tasks", name: "Tareas", icon: ListTodo },
   { id: "syllabus", name: "Temario", icon: Library },
   { id: "reviews", name: "Repasos", icon: RotateCcw },
   { id: "study", name: "Estudiar", icon: TimerIcon },
@@ -702,6 +706,8 @@ function Workspace() {
                 navigate={navigate}
                 initialCalendar={route === "agenda"}
               />
+            ) : route === "tasks" ? (
+              <Tasks />
             ) : route === "syllabus" ? (
               <Syllabus start={start} />
             ) : route === "reviews" ? (
@@ -742,7 +748,7 @@ function Workspace() {
             aria-current={
               route === n.id ||
               (n.id === "more" &&
-                ["tests", "settings", "study"].includes(route)) ||
+                ["tests", "settings", "study", "tasks"].includes(route)) ||
               (n.id === "today" && route === "agenda")
                 ? "page"
                 : undefined
@@ -750,7 +756,7 @@ function Workspace() {
             className={
               route === n.id ||
               (n.id === "more" &&
-                ["tests", "settings", "study"].includes(route)) ||
+                ["tests", "settings", "study", "tasks"].includes(route)) ||
               (n.id === "today" && route === "agenda")
                 ? "selected"
                 : ""
@@ -828,6 +834,12 @@ function More({
       title: "Pruebas y simulacros",
       description: "Registra resultados y encuentra tus puntos débiles",
       icon: ClipboardCheck,
+    },
+    {
+      route: "tasks",
+      title: "Tareas pendientes",
+      description: "Guarda actividades sin fecha y añádelas a cualquier día",
+      icon: ListTodo,
     },
     {
       route: "agenda",

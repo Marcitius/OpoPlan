@@ -10,5 +10,9 @@ export function comparePlanTasks(a: PlanTask, b: PlanTask): number {
 }
 
 export function planMinutes(tasks: PlanTask[]): number {
-  return tasks.filter((t) => t.status !== "cancelled").reduce((sum, t) => sum + t.estimated_minutes, 0);
+  return tasks.filter((t) => !t.is_backlog && t.status !== "cancelled").reduce((sum, t) => sum + t.estimated_minutes, 0);
 }
+
+/** Tasks without a scheduled day remain visible only in the Tareas inbox. */
+export const isBacklogTask = (task: PlanTask) => !!task.is_backlog && task.status === "pending" && !task.deleted_at;
+export const isScheduledTask = (task: PlanTask) => !task.is_backlog && !task.deleted_at;

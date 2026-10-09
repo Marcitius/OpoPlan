@@ -136,7 +136,7 @@ export function Progress({ navigate }: { navigate: (r: Route) => void }) {
   const studied = b.filter((n) => states.get(n.id)?.studied);
   const tasks = active(data.plan_tasks).filter(
     (t) =>
-      t.opposition_id === oppositionId &&
+      t.opposition_id === oppositionId && !t.is_backlog &&
       t.scheduled_day >= from &&
       t.scheduled_day <= to &&
       t.status !== "cancelled" &&

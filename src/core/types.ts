@@ -97,6 +97,8 @@ export interface MemoryEvent extends Base {
   scheduled_due?: string | null;
 }
 export interface PlanTask extends Base {
+  /** True for unscheduled tasks; scheduled_day is ignored until planned. */
+  is_backlog?: boolean;
   opposition_id: string;
   node_id: string | null;
   category_id: string | null;

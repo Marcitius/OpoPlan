@@ -10,8 +10,10 @@ import { blocks, nodePath, getStates } from "../core/stats";
 import { buildScopeIndex, immediateSubtopics, scopeRoots, scopeIndexOverlaps } from "../core/planScope";
 import { PlanContentPicker } from "./PlanContentPicker";
 import { planMinutes } from "../core/planner";
+import { estimateScopeMinutes } from "../core/estimates";
 
 type Draft = {
+  sourceTaskId?: string;
   key: string;
   name: string;
   kind: SessionKind;
@@ -55,6 +57,8 @@ export function BulkPlanForm({ day, onDone }: { day: string; onDone: () => void 
   const [scopePath, setScopePath] = useState<string[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [reviewMinutes, setReviewMinutes] = useState(20);
+  const [useSuggestedMinutes, setUseSuggestedMinutes] = useState(true);
+  const [selectedBacklog, setSelectedBacklog] = useState<string[]>([]);
   const [reviewStart, setReviewStart] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -81,10 +85,11 @@ export function BulkPlanForm({ day, onDone }: { day: string; onDone: () => void 
     }
     return out;
   }, [topic, scopePath, targetById, data.nodes, available]);
+  const backlog = useMemo(() => active(data.plan_tasks).filter(t => t.opposition_id === oppositionId && t.is_backlog && t.status === "pending"), [data.plan_tasks, oppositionId]);
   const categories = useMemo(() => active(data.categories), [data.categories]);
   const states = useMemo(() => getStates(data), [data]);
   const dayTasks = active(data.plan_tasks).filter(
-    t => t.opposition_id === oppositionId && t.scheduled_day === date && t.status !== "cancelled"
+    t => t.opposition_id === oppositionId && !t.is_backlog && t.scheduled_day === date && t.status !== "cancelled"
   );
   const currentMinutes = planMinutes(dayTasks);
   const nextMinutes = drafts.reduce((sum, draft) => sum + (Number.isFinite(draft.minutes) ? draft.minutes : 0), 0);
@@ -115,6 +120,15 @@ export function BulkPlanForm({ day, onDone }: { day: string; onDone: () => void 
     setDrafts(old => old.map(d => d.key === key ? { ...d, ...update } : d));
   };
   const add = (kind: SessionKind) => setDrafts(old => [...old, makeDraft(kind, old.at(-1))]);
+  function addFromBacklog() {
+    const added = backlog.filter(t => selectedBacklog.includes(t.id) && !drafts.some(d => d.sourceTaskId === t.id));
+    setDrafts(old => [...old, ...added.map(t => ({
+      key: crypto.randomUUID(), sourceTaskId: t.id, name: t.name, kind: t.kind,
+      nodeId: t.node_id ?? "", categoryId: t.category_id ?? "",
+      minutes: t.estimated_minutes, time: "", notes: t.notes,
+    }))]);
+    setSelectedBacklog([]);
+  }
 
   function toggleBlock(id: string) {
     if (occupied(id)) return;
@@ -127,7 +141,7 @@ export function BulkPlanForm({ day, onDone }: { day: string; onDone: () => void 
 
   function addSelectedReviews() {
     if (!chosen.length) return;
-    if (!Number.isInteger(reviewMinutes) || reviewMinutes < 1 || reviewMinutes > 1440) {
+    if (!useSuggestedMinutes && (!Number.isInteger(reviewMinutes) || reviewMinutes < 1 || reviewMinutes > 1440)) {
       setError("Indica una duración por bloque entre 1 y 1.440 minutos.");
       return;
     }
@@ -135,17 +149,18 @@ export function BulkPlanForm({ day, onDone }: { day: string; onDone: () => void 
     const picked = chosen.map(id => targetById.get(id)).filter((n): n is Node => !!n);
     let time = reviewStart;
     const additions: Draft[] = picked.map(n => {
+      const minutes = useSuggestedMinutes ? estimateScopeMinutes(data, oppositionId, n.id, "review").minutes : reviewMinutes;
       const draft: Draft = {
         key: crypto.randomUUID(),
         name: n.kind === "container" ? `Repaso completo: ${n.name}` : n.name,
         kind: "review",
         nodeId: n.id,
         categoryId: "",
-        minutes: reviewMinutes,
+        minutes,
         time,
         notes: "",
       };
-      time = after(time, reviewMinutes);
+      time = after(time, minutes);
       return draft;
     });
     setDrafts(old => {
@@ -162,6 +177,8 @@ export function BulkPlanForm({ day, onDone }: { day: string; onDone: () => void 
     setError("");
     try {
       const tasks: PlanTask[] = drafts.map(d => {
+        const original = d.sourceTaskId ? backlog.find(t => t.id === d.sourceTaskId) : undefined;
+        if (d.sourceTaskId && !original) throw new Error("Una tarea seleccionada ya no está pendiente. Vuelve a abrir el planificador.");
         const related = targetById.get(d.nodeId);
         const category = categories.find(c => c.id === d.categoryId);
         const name = d.name.trim() || related?.name || category?.name || "";
@@ -169,11 +186,11 @@ export function BulkPlanForm({ day, onDone }: { day: string; onDone: () => void 
         if (!Number.isInteger(d.minutes) || d.minutes < 1 || d.minutes > 1440)
           throw new Error("Los minutos deben estar entre 1 y 1.440.");
         return {
-          ...base(owner), opposition_id: oppositionId, name, kind: d.kind,
+          ...(original ?? base(owner)), opposition_id: oppositionId, name, kind: d.kind,
           node_id: related?.id ?? null,
           category_id: d.kind === "practice" ? category?.id ?? null : null,
-          scheduled_day: date, scheduled_time: d.time || null,
-          original_day: date, estimated_minutes: d.minutes,
+          scheduled_day: date, is_backlog: false, scheduled_time: d.time || null,
+          original_day: original?.original_day ?? date, estimated_minutes: d.minutes,
           status: "pending", notes: d.notes.trim(), completed_session_id: null,
         };
       });
@@ -204,6 +221,16 @@ export function BulkPlanForm({ day, onDone }: { day: string; onDone: () => void 
       <input type="date" required value={date} onChange={e => { setDate(e.target.value); setSelectedIds([]); }} />
     </Field>
     <p className="help">Primero elige la fecha. Después marca varios bloques para repasar y ajusta el tiempo y las notas de cada uno. Puedes mezclar repasos, estudio nuevo y prácticas en el mismo día.</p>
+
+    {backlog.length > 0 && <details className="bulk-backlog-picker">
+      <summary>Tareas sin fecha ({backlog.length}) · añadir desde pendientes</summary>
+      <p className="help">Selecciona tareas que guardaste anteriormente; no se duplicarán. Podrás cambiar sus minutos y notas más abajo.</p>
+      <div className="bulk-backlog-list">{backlog.filter(t => !drafts.some(d=>d.sourceTaskId===t.id)).map(t => <label key={t.id} className="bulk-backlog-choice">
+        <input type="checkbox" checked={selectedBacklog.includes(t.id)} onChange={e=>setSelectedBacklog(old=>e.target.checked?[...old,t.id]:old.filter(id=>id!==t.id))}/>
+        <span><strong>{t.name}</strong><small>{t.kind === "review" ? "Repaso" : t.kind === "study" ? "Estudio" : "Práctica"} · {t.estimated_minutes} min</small></span>
+      </label>)}</div>
+      <Button type="button" variant="secondary" disabled={!selectedBacklog.length} onClick={addFromBacklog}><Plus size={16}/> Añadir {selectedBacklog.length} tareas al día</Button>
+    </details>}
 
     <section className="bulk-review-picker">
       <button
@@ -303,10 +330,11 @@ export function BulkPlanForm({ day, onDone }: { day: string; onDone: () => void 
             })}
           </div> : <p className="help">Todavía no has seleccionado bloques. Puedes elegirlos de varios temas antes de añadirlos al día.</p>}
         </section>
+        <label className="check"><input type="checkbox" checked={useSuggestedMinutes} onChange={e=>setUseSuggestedMinutes(e.target.checked)}/> Usar los tiempos reales de estudio y repaso para estimar cada bloque</label>
         <div className="bulk-review-settings form-grid">
-          <Field label="Minutos por actividad">
+          {!useSuggestedMinutes && <Field label="Minutos por actividad">
             <input type="number" min="1" max="1440" value={reviewMinutes} onChange={e => setReviewMinutes(Number(e.target.value))} />
-          </Field>
+          </Field>}
           <Field label="Primera hora (opcional)">
             <input type="time" value={reviewStart} onChange={e => setReviewStart(e.target.value)} />
           </Field>
@@ -344,7 +372,7 @@ export function BulkPlanForm({ day, onDone }: { day: string; onDone: () => void 
             nodes={data.nodes} availableBlocks={available} value={d.nodeId}
             onChange={id => {
               const target = targetById.get(id);
-              changeDraft(d.key, { nodeId: id, name: target ? (target.kind === "container" ? `Repaso completo: ${target.name}` : target.name) : "" });
+              changeDraft(d.key, { nodeId: id, name: target ? (target.kind === "container" ? `Repaso completo: ${target.name}` : target.name) : "", ...(target ? { minutes: estimateScopeMinutes(data, oppositionId, id, d.kind).minutes } : {}) });
             }}
             kind={d.kind}
           />

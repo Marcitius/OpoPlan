@@ -3,6 +3,7 @@ import {
   ArrowRight,
   BookOpen,
   CalendarDays,
+  ListTodo,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -33,6 +34,7 @@ import {
 } from "../core/dates";
 import { blocks, getStates, statistics } from "../core/stats";
 import { priority } from "../core/memory";
+import { estimateBlockMinutes } from "../core/estimates";
 import { calendarICS, download } from "../core/import";
 import type { Route } from "../App";
 
@@ -54,7 +56,7 @@ export function Today({
   const stats = statistics(data, oppositionId, preferences.timezone, today, today);
   const week = statistics(data, oppositionId, preferences.timezone, addDays(today, -6), today);
   const tasks = active(data.plan_tasks)
-    .filter(t => t.opposition_id === oppositionId && t.status !== "cancelled")
+    .filter(t => t.opposition_id === oppositionId && !t.is_backlog && t.status !== "cancelled")
     .sort(comparePlanTasks);
   const todaySummary = dayPlanSummary(tasks, today);
   const tomorrowSummary = dayPlanSummary(tasks, tomorrow);
@@ -85,7 +87,8 @@ export function Today({
   const recent = active(data.sessions)
     .filter(s => s.opposition_id === oppositionId)
     .sort((a, b) => b.started_at.localeCompare(a.started_at));
-  const noSetup = !studyBlocks.length && !tasks.length && !recent.length;
+  const backlogCount = active(data.plan_tasks).filter(t => t.opposition_id === oppositionId && t.is_backlog && t.status === "pending").length;
+  const noSetup = !studyBlocks.length && !tasks.length && !recent.length && !backlogCount;
 
   const [selected, setSelected] = useState(today);
   const [calendarMode, setCalendarMode] = useState<"week" | "month">("week");
@@ -320,6 +323,7 @@ export function Today({
           <div className="home-quick-actions">
             <Button onClick={() => navigate("study")}><Play size={17}/> {timer ? "Continuar sesión" : "Empezar a estudiar"}</Button>
             <Button variant="secondary" onClick={() => start({ kind: "review" })}><RotateCcw size={17}/> Registrar repaso</Button>
+            <Button variant="ghost" onClick={() => navigate("tasks")}><ListTodo size={17}/> Tareas sin fecha{backlogCount ? ` (${backlogCount})` : ""}</Button>
           </div>
           <div className="home-main-grid">
             <div className="home-primary-stack">
@@ -336,7 +340,7 @@ export function Today({
                 {unplannedDueReviews.length ? unplannedDueReviews.slice(0, 3).map(n => {
                   const state = states.get(n.id)!;
                   const late = !!state.due && state.due < today;
-                  return <div className="home-review-row" key={n.id}><span className={`home-review-symbol ${late ? "late" : ""}`}><RotateCcw size={18}/></span><div><strong>{n.name}</strong><small>{late ? `${daysBetween(state.due!, today)} días de retraso` : "Para hoy"} · {n.estimated_minutes} min</small></div><Button variant="secondary" onClick={() => start({ kind: "review", nodeIds: [n.id] })}>Repasar</Button></div>;
+                  return <div className="home-review-row" key={n.id}><span className={`home-review-symbol ${late ? "late" : ""}`}><RotateCcw size={18}/></span><div><strong>{n.name}</strong><small>{late ? `${daysBetween(state.due!, today)} días de retraso` : "Para hoy"} · {estimateBlockMinutes(data, n.id, "review").minutes} min estimados</small></div><Button variant="secondary" onClick={() => start({ kind: "review", nodeIds: [n.id] })}>Repasar</Button></div>;
                 }) : <p className="home-inline-empty">{studied ? "No hay otros repasos vencidos ni previstos para hoy." : "Cuando marques un estudio inicial como completado, OpoPlan calculará su primer repaso."}</p>}
               </section>
             </div>

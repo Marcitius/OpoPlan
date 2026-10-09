@@ -146,6 +146,7 @@ export const schemas: Record<TableName, z.ZodType> = {
       }
     }),
   plan_tasks: row.extend({
+    is_backlog: z.boolean().optional(),
     opposition_id: uuid,
     node_id: nullableId,
     category_id: nullableId,

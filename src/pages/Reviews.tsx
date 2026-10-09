@@ -16,6 +16,7 @@ import type { Node } from "../core/types";
 import { blocks, getStates, nodePath } from "../core/stats";
 import { dayAt, labelDay, daysBetween } from "../core/dates";
 import { mastery, priority } from "../core/memory";
+import { estimateBlockMinutes } from "../core/estimates";
 import type { Route } from "../App";
 export function Reviews({
   start,
@@ -243,7 +244,7 @@ export function Reviews({
                                     : labelDay(m.due)
                                   : "Sin fecha"}
                               </span>
-                              <span>· {n.estimated_minutes} min</span>
+                              <span>· ~{estimateBlockMinutes(data, n.id, "review").minutes} min estimados</span>
                               {m.rating && (
                                 <span className={`badge ${m.rating}`}>
                                   {mastery(m)}
